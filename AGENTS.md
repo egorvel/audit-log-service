@@ -21,6 +21,7 @@
 - Make the smallest change that correctly solves the task. Do not refactor unrelated code, reformat entire files, rename public APIs, or clean up nearby code unless the task explicitly asks for it.
 - Do not make tests pass by weakening assertions, deleting tests, ignoring exceptions, increasing timeouts blindly, or suppressing errors. If a test is wrong, explain why and update it to assert the correct behavior.
 - Never print, copy, commit, or expose secrets.
+- Create a new branch for a new task.
 
 ## Architectural rules
 
