@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:18.3-alpine
+    container_name: audit-postgres
+    environment:
+      POSTGRES_DB: auditlog
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_pw
+      AUDIT_MIGRATE_PASSWORD: audit_migrate_pw
+      AUDIT_APP_PASSWORD: audit_app_pw
+    ports:
+      - "5432:5432"
+    volumes:
+      # Postgres 18+ expects the data volume mounted at /var/lib/postgresql so
+      # the major-version-suffixed subdirectory (e.g. .../18/docker) can live underneath it.
+      - audit-pgdata:/var/lib/postgresql
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auditlog"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+    image: audit-log-service:0.1.0
+    container_name: audit-log-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/auditlog
+      DB_USER: audit_app
+      DB_PASS: audit_app_pw
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/auditlog
+      FLYWAY_USER: audit_migrate
+      FLYWAY_PASS: audit_migrate_pw
+    ports:
+      - "8080:8080"
+
+volumes:
+  audit-pgdata:

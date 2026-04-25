@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: audit-log-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/auditlog}
+    username: ${DB_USER:audit_app}
+    password: ${DB_PASS:audit_app_pw}
+    hikari:
+      maximum-pool-size: 10
+  flyway:
+    enabled: true
+    url: ${FLYWAY_URL:${DB_URL:jdbc:postgresql://localhost:5432/auditlog}}
+    user: ${FLYWAY_USER:audit_migrate}
+    password: ${FLYWAY_PASS:audit_migrate_pw}
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
