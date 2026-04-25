@@ -5,8 +5,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Immutable audit event. Once constructed, never mutated.
- * timestamp is server-assigned by the database (DEFAULT now()).
+ * Immutable audit event. Once constructed, never mutated. timestamp is server-assigned by the
+ * database (DEFAULT now()).
  */
 public record AuditEvent(
         Long id,
@@ -15,8 +15,7 @@ public record AuditEvent(
         String action,
         String resource,
         Outcome outcome,
-        Map<String, Object> context
-) {
+        Map<String, Object> context) {
     public AuditEvent {
         Objects.requireNonNull(actor, "actor is required");
         Objects.requireNonNull(action, "action is required");

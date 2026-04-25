@@ -1,15 +1,16 @@
 package com.sam.auditlog.converter;
 
-import com.sam.auditlog.dto.CreateAuditEventRequest;
-import com.sam.auditlog.model.AuditEvent;
-import com.sam.auditlog.model.Outcome;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.Map;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.Test;
+
+import com.sam.auditlog.dto.CreateAuditEventRequest;
+import com.sam.auditlog.model.AuditEvent;
+import com.sam.auditlog.model.Outcome;
 
 /** Pure unit test - no Spring context. */
 class AuditEventConverterTest {
@@ -18,8 +19,9 @@ class AuditEventConverterTest {
 
     @Test
     void toEntity_dropsTimestampAndId_andDefaultsContext() {
-        var request = new CreateAuditEventRequest(
-                "user:42", "user.login", "session:abc", Outcome.SUCCESS, null);
+        var request =
+                new CreateAuditEventRequest(
+                        "user:42", "user.login", "session:abc", Outcome.SUCCESS, null);
 
         AuditEvent entity = converter.toEntity(request);
 
@@ -34,9 +36,13 @@ class AuditEventConverterTest {
 
     @Test
     void toEntity_preservesContext() {
-        var request = new CreateAuditEventRequest(
-                "svc:billing", "invoice.paid", "invoice:777", Outcome.SUCCESS,
-                Map.of("amount", 1200, "currency", "USD"));
+        var request =
+                new CreateAuditEventRequest(
+                        "svc:billing",
+                        "invoice.paid",
+                        "invoice:777",
+                        Outcome.SUCCESS,
+                        Map.of("amount", 1200, "currency", "USD"));
 
         AuditEvent entity = converter.toEntity(request);
 
@@ -45,10 +51,15 @@ class AuditEventConverterTest {
 
     @Test
     void toResponse_roundTripsAllFields() {
-        var entity = new AuditEvent(
-                7L, Instant.parse("2026-04-25T10:00:00Z"),
-                "user:1", "resource.updated", "project:42", Outcome.SUCCESS,
-                Map.of("k", "v"));
+        var entity =
+                new AuditEvent(
+                        7L,
+                        Instant.parse("2026-04-25T10:00:00Z"),
+                        "user:1",
+                        "resource.updated",
+                        "project:42",
+                        Outcome.SUCCESS,
+                        Map.of("k", "v"));
 
         var response = converter.toResponse(entity);
 
@@ -63,8 +74,8 @@ class AuditEventConverterTest {
 
     @Test
     void auditEvent_actorIsRequired() {
-        assertThatThrownBy(() -> new AuditEvent(
-                null, null, null, "x", "y", Outcome.SUCCESS, Map.of()))
+        assertThatThrownBy(
+                        () -> new AuditEvent(null, null, null, "x", "y", Outcome.SUCCESS, Map.of()))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("actor");
     }
@@ -73,8 +84,7 @@ class AuditEventConverterTest {
     void auditEvent_isImmutable_contextIsCopiedAndUnmodifiable() {
         var mutable = new java.util.HashMap<String, Object>();
         mutable.put("a", 1);
-        var entity = new AuditEvent(
-                null, null, "actor", "act", "res", Outcome.SUCCESS, mutable);
+        var entity = new AuditEvent(null, null, "actor", "act", "res", Outcome.SUCCESS, mutable);
 
         mutable.put("b", 2);
 
