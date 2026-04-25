@@ -1,15 +1,16 @@
 package com.sam.auditlog.converter;
 
+import java.util.Map;
+
+import org.springframework.stereotype.Component;
+
 import com.sam.auditlog.dto.AuditEventResponse;
 import com.sam.auditlog.dto.CreateAuditEventRequest;
 import com.sam.auditlog.model.AuditEvent;
-import org.springframework.stereotype.Component;
-
-import java.util.Map;
 
 /**
- * Pure mapper between API DTOs and the domain entity.
- * Note: timestamp is intentionally NOT taken from the request (server-assigned).
+ * Pure mapper between API DTOs and the domain entity. Note: timestamp is intentionally NOT taken
+ * from the request (server-assigned).
  */
 @Component
 public class AuditEventConverter {
@@ -23,8 +24,7 @@ public class AuditEventConverter {
                 request.action(),
                 request.resource(),
                 request.outcome(),
-                ctx
-        );
+                ctx);
     }
 
     public AuditEventResponse toResponse(AuditEvent event) {
@@ -35,7 +35,6 @@ public class AuditEventConverter {
                 event.action(),
                 event.resource(),
                 event.outcome(),
-                event.context()
-        );
+                event.context());
     }
 }

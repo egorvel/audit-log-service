@@ -1,9 +1,9 @@
 package com.sam.auditlog.dto;
 
-import com.sam.auditlog.model.Outcome;
-
 import java.time.Instant;
 import java.util.Map;
+
+import com.sam.auditlog.model.Outcome;
 
 public record AuditEventResponse(
         long id,
@@ -12,6 +12,4 @@ public record AuditEventResponse(
         String action,
         String resource,
         Outcome outcome,
-        Map<String, Object> context
-) {
-}
+        Map<String, Object> context) {}

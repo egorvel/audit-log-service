@@ -1,12 +1,13 @@
 package com.sam.auditlog.service;
 
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+
 import com.sam.auditlog.converter.AuditEventConverter;
 import com.sam.auditlog.dto.AuditEventResponse;
 import com.sam.auditlog.dto.CreateAuditEventRequest;
 import com.sam.auditlog.repository.AuditEventRepository;
-import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 @Service
 public class AuditEventService {
@@ -29,8 +30,6 @@ public class AuditEventService {
 
     public List<AuditEventResponse> recent(int limit) {
         int capped = Math.max(1, Math.min(limit, MAX_PAGE_SIZE));
-        return repository.findRecent(capped).stream()
-                .map(converter::toResponse)
-                .toList();
+        return repository.findRecent(capped).stream().map(converter::toResponse).toList();
     }
 }
