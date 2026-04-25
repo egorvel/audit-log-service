@@ -1,4 +1,4 @@
-# audit-log-service
+# Audit Log Service
 
 Internal audit log service. Other services post audit events here; the service stores them immutably for compliance, security, and observability use cases (compliance officers, SREs, security analysts).
 
@@ -12,13 +12,6 @@ Internal audit log service. Other services post audit events here; the service s
 | `resource`  | Target of the action (`project:42`, `invoice:777`).                    |
 | `outcome`   | One of `SUCCESS`, `DENIED`, `ERROR`.                                   |
 | `context`   | Free-form JSON object with additional details.                         |
-
-## Invariants
-
-- **Append-only** — no `UPDATE` / `DELETE` / `TRUNCATE` on the events table, ever. Enforced both by DB triggers and by least-privilege grants on the app's DB role (`SELECT` + `INSERT` only).
-- **Immutable in memory too** — `AuditEvent` is a `record` whose `context` map is defensively copied to an unmodifiable view in the canonical constructor.
-- **`actor` is required** — validated at the API boundary *and* `NOT NULL` in the schema.
-- **Schema changes go through Flyway** — migrations are append-only too. Edit a shipped migration and you'll regret it; add a new one instead.
 
 ## Stack
 
@@ -93,21 +86,3 @@ The app reads its connection details from environment variables, with sensible d
 | `FLYWAY_USER`   | Migration role (DDL privileges)                  | `audit_migrate`                               |
 | `FLYWAY_PASS`   | Migration password                               | `audit_migrate_pw`                            |
 
-## Project layout
-
-```
-src/main/java/com/sam/auditlog/
-  AuditLogApplication.java
-  config/        (reserved for Spring @Configuration classes)
-  controller/    REST controllers + global exception handler
-  converter/     DTO ⇄ entity mappers
-  dto/           Request / response records
-  model/         AuditEvent (record), Outcome enum
-  repository/    JdbcTemplate-based data access
-  service/       Business logic
-  util/          JSON helpers
-src/main/resources/
-  application.yml
-  db/migration/V1__create_audit_events.sql
-docker/postgres-init/   Role bootstrap for the compose stack
-```
