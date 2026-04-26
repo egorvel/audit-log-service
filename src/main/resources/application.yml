@@ -17,6 +17,14 @@ spring:
     password: ${FLYWAY_PASS:audit_migrate_pw}
     locations: classpath:db/migration
     baseline-on-migrate: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   jackson:
     serialization:
       write-dates-as-timestamps: false

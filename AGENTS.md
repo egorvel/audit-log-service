@@ -28,6 +28,7 @@
 **Technology requirements:**
 - Java 21, Spring Boot 3, Maven
 - PostgreSQL 18.3, Flyway
+- Spring Data JPA (Hibernate) for persistence
 - Testcontainers
 
 **Persistence conventions:**
@@ -46,4 +47,3 @@
 - Services: src/main/java/com/sam/auditlog/service
 - Repositories: src/main/java/com/sam/auditlog/repository
 - Entities: src/main/java/com/sam/auditlog/model
-- Utils: src/main/java/com/sam/auditlog/util

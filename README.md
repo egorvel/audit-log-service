@@ -18,7 +18,7 @@ Internal audit log service. Other services post audit events here; the service s
 - Java 21, Spring Boot 3.3
 - PostgreSQL 18.3
 - Flyway for migrations
-- Plain JDBC (`JdbcTemplate`) — no JPA, no ORM mapping for the immutable record
+- Spring Data JPA (Hibernate) for persistence
 - JUnit 5 + Testcontainers (real Postgres) for integration tests
 
 ## Quick start

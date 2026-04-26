@@ -2,6 +2,7 @@ package com.sam.auditlog.service;
 
 import java.util.List;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import com.sam.auditlog.converter.AuditEventConverter;
@@ -24,12 +25,14 @@ public class AuditEventService {
 
     public AuditEventResponse record(CreateAuditEventRequest request) {
         var entity = converter.toEntity(request);
-        var saved = repository.insert(entity);
+        var saved = repository.save(entity);
         return converter.toResponse(saved);
     }
 
     public List<AuditEventResponse> recent(int limit) {
         int capped = Math.max(1, Math.min(limit, MAX_PAGE_SIZE));
-        return repository.findRecent(capped).stream().map(converter::toResponse).toList();
+        return repository.findAllByOrderByIdDesc(PageRequest.of(0, capped)).stream()
+                .map(converter::toResponse)
+                .toList();
     }
 }

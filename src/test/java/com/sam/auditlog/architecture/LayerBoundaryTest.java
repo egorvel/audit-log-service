@@ -35,8 +35,6 @@ class LayerBoundaryTest {
                     .definedBy("com.sam.auditlog.dto..")
                     .layer("Model")
                     .definedBy("com.sam.auditlog.model..")
-                    .layer("Util")
-                    .definedBy("com.sam.auditlog.util..")
                     // Config is reserved in AGENTS.md for Spring @Configuration classes;
                     // it can legitimately be empty until one is added, so allow that.
                     .optionalLayer("Config")
@@ -64,14 +62,9 @@ class LayerBoundaryTest {
                     .whereLayer("Dto")
                     .mayOnlyBeAccessedByLayers("Controller", "Service", "Converter")
 
-                    // Util holds cross-cutting helpers (currently JSON support); only
-                    // layers that actually need them may pull them in.
-                    .whereLayer("Util")
-                    .mayOnlyBeAccessedByLayers("Repository", "Service", "Controller", "Config")
-
                     // Model is the domain core; everything above it may depend on it,
                     // but it does not depend on anything else inside the project.
                     .whereLayer("Model")
                     .mayOnlyBeAccessedByLayers(
-                            "Controller", "Service", "Repository", "Converter", "Dto", "Util");
+                            "Controller", "Service", "Repository", "Converter", "Dto");
 }
