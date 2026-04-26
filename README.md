@@ -60,6 +60,13 @@ curl -s 'http://localhost:8080/api/v1/events?limit=10'
 
 `POST` returns `400` with a list of field errors on validation failures (e.g. missing `actor`).
 
+## API docs (Swagger / OpenAPI)
+
+Once the app is running, the generated docs are available at:
+
+- Swagger UI: <http://localhost:8080/swagger-ui/index.html>
+- OpenAPI JSON: <http://localhost:8080/v3/api-docs>
+
 ## Building and testing locally
 
 ```bash
