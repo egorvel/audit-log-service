@@ -16,7 +16,7 @@
 - .specs/<feature>/tasks.md - in what order. Decomposition into safe increments with refs to requirements.md and design.md, explicit and testable DoD, dependencies between tasks. Each task: one safe commit.
 - spec is the source of truth: gaps go to spec first, code second.
 - acceptance criteria must be written in EARS-style.
-- agents must ask 5–7 clarifying questions before writing a spec. One decision = one question. If there is no real doubt, do not invent one.
+- before writing any of requirements.md, design.md, tasks.md ask 5–7 clarifying questions. One decision = one question. If there is no real doubt, do not invent one.
 
 ## Invariants
 
