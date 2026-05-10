@@ -35,7 +35,7 @@ Filters are AND-combined. All four data filters may be omitted; the endpoint the
   "events": [
     {
       "id": "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
-      "timestamp": "2026-04-17T11:02:14.123Z",
+      "timestamp": "2026-04-17T11:02:14.123456Z",
       "actor":    { "id": "u_42",       "type": "user" },
       "resource": { "id": "9f3b...",    "type": "order" },
       "action":   "order.refunded",
