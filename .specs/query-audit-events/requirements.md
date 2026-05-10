@@ -25,7 +25,7 @@ These fields cannot be reliably reconstructed at the response boundary from the 
 
 **Acceptance criteria (EARS):**
 
-- **AC1.1 — Ubiquitous.** The system shall expose `GET /audit-events` returning a JSON page of events matching the provided filters.
+- **AC1.1 — Ubiquitous.** The system shall expose `GET /api/v1/audit-events` returning a JSON page of events matching the provided filters.
 - **AC1.2 — Event-driven.** When the request includes `actor=<id>`, the system shall return only events whose `actor.id` equals `<id>`.
 - **AC1.3 — Event-driven.** When the request includes `resource=<id>`, the system shall return only events whose `resource.id` equals `<id>`.
 - **AC1.4 — Event-driven.** When the request includes `from=<ts>`, the system shall return only events with `timestamp >= <ts>`.
