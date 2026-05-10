@@ -33,8 +33,7 @@ path before any other code starts producing ULIDs.
 **Refs.** design §2.2 (ULID generation), §6.2 (`service.UlidFactory`).
 
 **Scope.**
-- Add `com.github.f4b6a3:ulid-creator` to `pom.xml` (or equivalent — pick one
-  small dep; don't roll our own).
+- Add `com.github.f4b6a3:ulid-creator:5.2.3` to `pom.xml`.
 - Create `service.UlidFactory` as a `@Component` wrapping a single
   monotonic factory instance; expose `String next()` returning the
   Crockford-Base32 26-char form.
