@@ -1,8 +1,5 @@
 package com.sam.auditlog.service;
 
-import java.util.List;
-
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import com.sam.auditlog.converter.AuditEventConverter;
@@ -13,26 +10,22 @@ import com.sam.auditlog.repository.AuditEventRepository;
 @Service
 public class AuditEventService {
 
-    private static final int MAX_PAGE_SIZE = 500;
-
     private final AuditEventRepository repository;
     private final AuditEventConverter converter;
+    private final UlidFactory ulidFactory;
 
-    public AuditEventService(AuditEventRepository repository, AuditEventConverter converter) {
+    public AuditEventService(
+            AuditEventRepository repository,
+            AuditEventConverter converter,
+            UlidFactory ulidFactory) {
         this.repository = repository;
         this.converter = converter;
+        this.ulidFactory = ulidFactory;
     }
 
     public AuditEventResponse record(CreateAuditEventRequest request) {
-        var entity = converter.toEntity(request);
+        var entity = converter.toEntity(request, ulidFactory.next());
         var saved = repository.save(entity);
         return converter.toResponse(saved);
-    }
-
-    public List<AuditEventResponse> recent(int limit) {
-        int capped = Math.max(1, Math.min(limit, MAX_PAGE_SIZE));
-        return repository.findAllByOrderByIdDesc(PageRequest.of(0, capped)).stream()
-                .map(converter::toResponse)
-                .toList();
     }
 }

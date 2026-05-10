@@ -7,8 +7,6 @@ import java.util.Objects;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
@@ -19,28 +17,35 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Immutable audit event. Once constructed, never mutated. timestamp is server-assigned by the
- * database (DEFAULT now()).
+ * database (DEFAULT now()); id is a ULID assigned at the application layer.
  */
 @Entity
 @Table(name = "audit_events")
 public class AuditEvent {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(length = 26, columnDefinition = "char(26)")
+    private String id;
 
     @Generated(event = EventType.INSERT)
     @Column(name = "timestamp")
     private Instant timestamp;
 
-    @Column(nullable = false)
-    private String actor;
+    @Column(name = "actor_id", nullable = false)
+    private String actorId;
+
+    @Column(name = "actor_type", nullable = false)
+    private String actorType;
+
+    @Column(name = "resource_id", nullable = false)
+    private String resourceId;
+
+    @Column(name = "resource_type", nullable = false)
+    private String resourceType;
 
     @Column(nullable = false)
     private String action;
-
-    @Column(nullable = false)
-    private String resource;
 
     @Convert(converter = OutcomeConverter.class)
     @Column(nullable = false)
@@ -55,27 +60,33 @@ public class AuditEvent {
     }
 
     public AuditEvent(
-            Long id,
+            String id,
             Instant timestamp,
-            String actor,
+            String actorId,
+            String actorType,
+            String resourceId,
+            String resourceType,
             String action,
-            String resource,
             Outcome outcome,
             Map<String, Object> context) {
-        Objects.requireNonNull(actor, "actor is required");
+        Objects.requireNonNull(actorId, "actor.id is required");
+        Objects.requireNonNull(actorType, "actor.type is required");
+        Objects.requireNonNull(resourceId, "resource.id is required");
+        Objects.requireNonNull(resourceType, "resource.type is required");
         Objects.requireNonNull(action, "action is required");
-        Objects.requireNonNull(resource, "resource is required");
         Objects.requireNonNull(outcome, "outcome is required");
         this.id = id;
         this.timestamp = timestamp;
-        this.actor = actor;
+        this.actorId = actorId;
+        this.actorType = actorType;
+        this.resourceId = resourceId;
+        this.resourceType = resourceType;
         this.action = action;
-        this.resource = resource;
         this.outcome = outcome;
         this.context = context == null ? Map.of() : Map.copyOf(context);
     }
 
-    public Long id() {
+    public String id() {
         return id;
     }
 
@@ -83,16 +94,24 @@ public class AuditEvent {
         return timestamp;
     }
 
-    public String actor() {
-        return actor;
+    public String actorId() {
+        return actorId;
+    }
+
+    public String actorType() {
+        return actorType;
+    }
+
+    public String resourceId() {
+        return resourceId;
+    }
+
+    public String resourceType() {
+        return resourceType;
     }
 
     public String action() {
         return action;
-    }
-
-    public String resource() {
-        return resource;
     }
 
     public Outcome outcome() {
