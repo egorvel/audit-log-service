@@ -15,7 +15,7 @@ It also requires a change to the persisted event shape. The current schema store
 - `id` exposed as an externally stable, sortable, string identifier (ULID).
 - `actor` and `resource` exposed as structured objects with separate `id` and `type`.
 
-These fields cannot be reliably reconstructed at the response boundary from the current flat strings (there is no enforced parsing convention), so the model itself must change. The append-only invariant on the `audit_events` table is preserved: the migration introduces new columns (and a new ULID PK) via Flyway, and existing rows are backfilled in-place during the migration. No `UPDATE` or `DELETE` statements run against live event data after the migration completes.
+These fields cannot be reliably reconstructed at the response boundary from the current flat strings (there is no enforced parsing convention), so the model itself must change. The append-only invariant on the `audit_events` table is preserved: the migration introduces a new schema via Flyway and ports existing rows by inserting them into a fresh table that atomically replaces the old one. No `UPDATE` or `DELETE` statements run against live event rows.
 
 ## User stories
 
@@ -57,7 +57,7 @@ These fields cannot be reliably reconstructed at the response boundary from the 
 - **AC3.2 — Ubiquitous.** The cursor shall be opaque to clients: clients shall not be required, expected, or able to interpret its contents.
 - **AC3.3 — Event-driven.** When the request includes `cursor=<c>`, the system shall return the next page of events strictly after the position encoded by `<c>` under the same ordering as AC2.1.
 - **AC3.4 — Ubiquitous.** The system shall encode the cursor over the `(timestamp, id)` pair of the last returned event, so that pagination is stable under concurrent inserts: events newly written after a page was returned shall not appear on subsequent pages of the same walk, and no event already returned shall reappear.
-- **AC3.5 — Event-driven.** When the request includes both `cursor` and any of `actor`, `resource`, `from`, `to`, the system shall apply the same filter set as encoded into the cursor's originating request; if the filters disagree, the system shall reject the request with HTTP 422 (all parameters parse correctly but their combination is inconsistent).
+- **AC3.5 — Event-driven.** When the request includes `cursor`, the system shall require the request's filter set (`actor`, `resource`, `from`, `to`) to match the filter set encoded into the cursor's originating request; if they disagree — including the case where a filter is now absent that was present originally, or vice versa — the system shall reject the request with HTTP 422 (all parameters parse correctly but their combination is inconsistent).
 - **AC3.6 — Ubiquitous.** The system shall include `next_cursor` in the response if and only if more events exist after the returned page; the field shall be absent (or `null`) on the final page.
 - **AC3.7 — Ubiquitous.** The system shall accept an optional `limit` query parameter; when omitted, the page size shall default to 50; the maximum allowed value shall be 200.
 - **AC3.8a — Unwanted.** If `limit` is not parseable as an integer, then the system shall reject the request with HTTP 400.
