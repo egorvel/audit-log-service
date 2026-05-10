@@ -24,7 +24,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.f4b6a3.ulid.UlidCreator;
+import com.sam.auditlog.dto.ActorRef;
 import com.sam.auditlog.dto.CreateAuditEventRequest;
+import com.sam.auditlog.dto.ResourceRef;
 import com.sam.auditlog.model.Outcome;
 
 @SpringBootTest
@@ -58,27 +61,34 @@ class AuditEventIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test
-    void postEvent_persistsAndReturns201_withServerAssignedTimestamp() throws Exception {
+    void postEvent_persistsAndReturns201_withServerAssignedTimestampAndUlidId() throws Exception {
         var body =
                 mapper.writeValueAsString(
                         new CreateAuditEventRequest(
-                                "user:42",
+                                new ActorRef("u_42", "user"),
                                 "user.login",
-                                "session:abc",
+                                new ResourceRef("session_abc", "session"),
                                 Outcome.SUCCESS,
                                 Map.of("ip", "10.0.0.1")));
 
         var result =
-                mvc.perform(post("/api/v1/events").contentType(APPLICATION_JSON).content(body))
+                mvc.perform(
+                                post("/api/v1/audit-events")
+                                        .contentType(APPLICATION_JSON)
+                                        .content(body))
                         .andExpect(status().isCreated())
                         .andExpect(header().exists("Location"))
-                        .andExpect(jsonPath("$.id").isNumber())
+                        .andExpect(jsonPath("$.id").isString())
                         .andExpect(jsonPath("$.timestamp").exists())
-                        .andExpect(jsonPath("$.actor").value("user:42"))
+                        .andExpect(jsonPath("$.actor.id").value("u_42"))
+                        .andExpect(jsonPath("$.actor.type").value("user"))
+                        .andExpect(jsonPath("$.resource.id").value("session_abc"))
+                        .andExpect(jsonPath("$.resource.type").value("session"))
                         .andExpect(jsonPath("$.outcome").value("SUCCESS"))
                         .andReturn();
 
         JsonNode resp = mapper.readTree(result.getResponse().getContentAsString());
+        assertThat(resp.get("id").asText()).hasSize(26);
         assertThat(resp.get("context").get("ip").asText()).isEqualTo("10.0.0.1");
     }
 
@@ -90,20 +100,22 @@ class AuditEventIntegrationTest {
                 """
                 {
                   "timestamp": "1999-01-01T00:00:00Z",
-                  "actor": "user:1",
+                  "actor": {"id": "u_1", "type": "user"},
                   "action": "resource.read",
-                  "resource": "doc:1",
+                  "resource": {"id": "doc_1", "type": "doc"},
                   "outcome": "SUCCESS"
                 }
                 """;
 
         var result =
-                mvc.perform(post("/api/v1/events").contentType(APPLICATION_JSON).content(body))
+                mvc.perform(
+                                post("/api/v1/audit-events")
+                                        .contentType(APPLICATION_JSON)
+                                        .content(body))
                         .andExpect(status().isCreated())
                         .andReturn();
 
         JsonNode resp = mapper.readTree(result.getResponse().getContentAsString());
-        // Timestamp must NOT be the client-supplied 1999 value
         assertThat(resp.get("timestamp").asText()).doesNotStartWith("1999");
     }
 
@@ -111,63 +123,72 @@ class AuditEventIntegrationTest {
     void postEvent_rejectsMissingActor() throws Exception {
         String body =
                 """
-                {"action":"x","resource":"y","outcome":"SUCCESS"}
+                {"action":"x","resource":{"id":"r","type":"t"},"outcome":"SUCCESS"}
                 """;
-        mvc.perform(post("/api/v1/events").contentType(APPLICATION_JSON).content(body))
+        mvc.perform(post("/api/v1/audit-events").contentType(APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors").isArray());
     }
 
     @Test
-    void postEvent_rejectsBlankActor() throws Exception {
+    void postEvent_rejectsBlankActorId() throws Exception {
         String body =
                 """
-                {"actor":"   ","action":"x","resource":"y","outcome":"SUCCESS"}
+                {"actor":{"id":"   ","type":"user"},"action":"x",
+                 "resource":{"id":"r","type":"t"},"outcome":"SUCCESS"}
                 """;
-        mvc.perform(post("/api/v1/events").contentType(APPLICATION_JSON).content(body))
+        mvc.perform(post("/api/v1/audit-events").contentType(APPLICATION_JSON).content(body))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    void getEvents_returnsRecent() throws Exception {
-        var body =
-                mapper.writeValueAsString(
-                        new CreateAuditEventRequest(
-                                "user:99", "test.list", "thing:1", Outcome.DENIED, Map.of()));
-        mvc.perform(post("/api/v1/events").contentType(APPLICATION_JSON).content(body))
-                .andExpect(status().isCreated());
-
-        mvc.perform(get("/api/v1/events").param("limit", "10"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$[0].actor").exists());
+    void postEvent_rejectsMissingActorType() throws Exception {
+        String body =
+                """
+                {"actor":{"id":"u_1"},"action":"x",
+                 "resource":{"id":"r","type":"t"},"outcome":"SUCCESS"}
+                """;
+        mvc.perform(post("/api/v1/audit-events").contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
     void database_blocksUpdate() {
+        String ulid = UlidCreator.getMonotonicUlid().toString();
         jdbc.update(
-                "INSERT INTO audit_events (actor, action, resource, outcome) VALUES (?, ?, ?, ?)",
-                "actor",
+                "INSERT INTO audit_events"
+                        + " (id, actor_id, actor_type, action, resource_id, resource_type,"
+                        + " outcome) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ulid,
+                "u_1",
+                "user",
                 "act",
-                "res",
+                "r_1",
+                "thing",
                 "success");
 
         assertThatThrownBy(
                         () ->
                                 jdbc.update(
-                                        "UPDATE audit_events SET actor = 'hacker' WHERE id ="
-                                                + " (SELECT MAX(id) FROM audit_events)"))
+                                        "UPDATE audit_events SET actor_id = 'hacker' WHERE id = ?",
+                                        ulid))
                 .isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("append-only");
     }
 
     @Test
     void database_blocksDelete() {
+        String ulid = UlidCreator.getMonotonicUlid().toString();
         jdbc.update(
-                "INSERT INTO audit_events (actor, action, resource, outcome) VALUES (?, ?, ?, ?)",
-                "actor2",
+                "INSERT INTO audit_events"
+                        + " (id, actor_id, actor_type, action, resource_id, resource_type,"
+                        + " outcome) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ulid,
+                "u_2",
+                "user",
                 "act",
-                "res",
+                "r_2",
+                "thing",
                 "success");
 
         assertThatThrownBy(() -> jdbc.update("DELETE FROM audit_events"))
@@ -187,7 +208,7 @@ class AuditEventIntegrationTest {
         mvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.openapi").exists())
-                .andExpect(jsonPath("$.paths['/api/v1/events']").exists());
+                .andExpect(jsonPath("$.paths['/api/v1/audit-events']").exists());
     }
 
     @Test

@@ -15,7 +15,7 @@ spring:
     url: ${FLYWAY_URL:${DB_URL:jdbc:postgresql://localhost:5432/auditlog}}
     user: ${FLYWAY_USER:audit_migrate}
     password: ${FLYWAY_PASS:audit_migrate_pw}
-    locations: classpath:db/migration
+    locations: classpath:db/migration,classpath:com/sam/auditlog/db/migration
     baseline-on-migrate: true
   jpa:
     hibernate:
