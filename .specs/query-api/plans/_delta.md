@@ -28,3 +28,32 @@ For full plan content see the versioned files (`v1.md`, `v2.md`, …).
   dependency is needed. Test uses
   `@ExtendWith(MockitoExtension.class)`, `@Mock AuditEventRepository`,
   real `CursorCodec`, real `AuditEventConverter`.
+
+## v2 → v3
+
+### `UlidFactory.fromTimestamp(Instant)`
+
+- **Issue.** v2 spec'd `UlidFactory` with only `String next()`. T2's
+  backfill needs to assign ULIDs to historical rows whose time component
+  equals each row's original `timestamp` — otherwise the post-migration
+  `id ASC` order would not match the pre-migration `timestamp ASC` order,
+  and AC2.1's tiebreaker contract would silently shift for those rows.
+- **Fix.** v3 adds `fromTimestamp(Instant)` alongside `next()`. The new
+  method uses `UlidCreator.getUlid(long timeMillis)` (random payload,
+  caller-supplied time component); `next()` keeps using the monotonic
+  factory for runtime inserts.
+
+### V2 migration as a Flyway Java migration
+
+- **Issue.** v2 spec'd the V2 migration as
+  `src/main/resources/db/migration/V2__query_api_model.sql`. With
+  `UlidFactory` living in Java, a SQL migration would either need a
+  parallel ULID generator implemented in PL/pgSQL (two sources of truth
+  for ULID generation) or a workaround like a temporary `ulid` extension.
+- **Fix.** v3 makes V2 a Flyway Java migration at
+  `src/main/java/com/sam/auditlog/db/migration/V2__query_api_model.java`
+  (extends `BaseJavaMigration`). The migration instantiates `UlidFactory`
+  directly and calls `fromTimestamp(timestamp)` per row during the
+  INSERT-from-old. `application.properties` gets
+  `spring.flyway.locations=classpath:db/migration,classpath:com/sam/auditlog/db/migration`
+  so V1 (SQL, unchanged) and V2 (Java) are both discovered.
