@@ -54,7 +54,7 @@ These fields cannot be reliably reconstructed at the response boundary from the 
 **Acceptance criteria (EARS):**
 
 - **AC3.1 — Ubiquitous.** The system shall support cursor-based pagination via a `cursor` query parameter and a `next_cursor` field in the response.
-- **AC3.2 — Ubiquitous.** The cursor shall be opaque to clients: clients shall not be required, expected, or able to interpret its contents.
+- **AC3.2 — Ubiquitous.** The cursor shall be opaque: clients shall not be required or expected to interpret its contents. The system makes no guarantees about the cursor's internal format and may evolve it across releases (signaled by the schema version `v`); the only supported client behavior is to pass a previously returned `next_cursor` back to the system unchanged.
 - **AC3.3 — Event-driven.** When the request includes `cursor=<c>`, the system shall return the next page of events strictly after the position encoded by `<c>` under the same ordering as AC2.1.
 - **AC3.4 — Ubiquitous.** The system shall encode the cursor over the `(timestamp, id)` pair of the last returned event, so that pagination is stable under concurrent inserts: events newly written after a page was returned shall not appear on subsequent pages of the same walk, and no event already returned shall reappear.
 - **AC3.5 — Event-driven.** When the request includes `cursor`, the system shall require the request's filter set (`actor`, `resource`, `from`, `to`) to match the filter set encoded into the cursor's originating request; if they disagree — including the case where a filter is now absent that was present originally, or vice versa — the system shall reject the request with HTTP 422 (all parameters parse correctly but their combination is inconsistent).

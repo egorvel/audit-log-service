@@ -123,8 +123,8 @@ implementing design §2.3:
 
 **Goal.** Land all cursor / validation primitives so T5 can compose them.
 
-**Refs.** design §1.4 (error mapping), §3.3 (cursor format), §3.5 (filter
-hash), §5 (validation), §6.1 (handler), §6.2 (`CursorCodec`); AC3.2, AC3.4,
+**Refs.** design §1.4 (error mapping), §3.3 (cursor format + filter hash),
+§5 (validation), §6.1 (handler), §6.2 (`CursorCodec`); AC3.2, AC3.4,
 AC3.5, AC3.9a, AC3.9b.
 
 **Scope.**
