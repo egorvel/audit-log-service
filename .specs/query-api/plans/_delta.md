@@ -54,6 +54,6 @@ For full plan content see the versioned files (`v1.md`, `v2.md`, …).
   `src/main/java/com/sam/auditlog/db/migration/V2__query_api_model.java`
   (extends `BaseJavaMigration`). The migration instantiates `UlidFactory`
   directly and calls `fromTimestamp(timestamp)` per row during the
-  INSERT-from-old. `application.properties` gets
-  `spring.flyway.locations=classpath:db/migration,classpath:com/sam/auditlog/db/migration`
+  INSERT-from-old. `application.yml` gets
+  `spring.flyway.locations: classpath:db/migration,classpath:com/sam/auditlog/db/migration`
   so V1 (SQL, unchanged) and V2 (Java) are both discovered.

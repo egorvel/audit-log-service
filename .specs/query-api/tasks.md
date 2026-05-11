@@ -63,8 +63,10 @@ in one commit, since DB and JPA mapping must stay in sync.
 
 **Scope.**
 
-*Migration* — `src/main/resources/db/migration/V2__query_api_model.sql`
-implementing design §2.3:
+*Migration* — `src/main/java/com/sam/auditlog/db/migration/V2__query_api_model.java`
+(Flyway `BaseJavaMigration`, so it can instantiate `UlidFactory` and call
+`fromTimestamp(timestamp)` per row instead of re-implementing ULID generation
+in PL/pgSQL — see `_delta.md` v2→v3) implementing design §2.3:
 1. `CREATE TABLE audit_events_new (...)` per design §2.1.
 2. `INSERT INTO audit_events_new SELECT ...` from old table, deriving
    `id` (fresh ULID per row, seeded from row's `timestamp` so ordering is
