@@ -105,7 +105,9 @@ ULIDs are generated **at the application layer** at insert time (not by the DB).
 
 A `UlidFactory` (single bean, monotonic per JVM) is added to the service layer. Implementation can wrap a known library (e.g. `f4b6a3/ulid-creator`) — choice belongs in `tasks.md`.
 
-### 2.3 Migration strategy (Flyway `V2__query_api_model.sql`)
+### 2.3 Migration strategy (Flyway Java migration `V2__query_api_model.java`)
+
+The migration is implemented as a Flyway `BaseJavaMigration` (not a `.sql` file) so the INSERT-from-old step can call `UlidFactory.fromTimestamp(...)` directly per row. A `.sql` migration would have to re-implement ULID generation in PL/pgSQL or pull in a temporary `ulid` extension — both create a second source of truth for ULID generation alongside the Java `UlidFactory`. Flyway is configured with `spring.flyway.locations: classpath:db/migration,classpath:com/sam/auditlog/db/migration` so V1 (SQL) and V2 (Java) are both discovered.
 
 The model change cannot be expressed as plain `ALTER TABLE … UPDATE …` because the no-update trigger is part of the contract on the `audit_events` table. The migration therefore uses **table replacement via INSERT-only**:
 
@@ -205,7 +207,7 @@ Coverage:
 
 `actor_type` and `resource_type` are not filterable in v1 (out of scope), so they get no indexes. The pre-existing standalone `idx_audit_events_action` and `idx_audit_events_actor` from V1 are dropped — they no longer match the access pattern.
 
-Indexes are created in the same `V2__query_api_model.sql` migration as the table, so the cluster moves atomically from the V1 to the V2 access pattern.
+Indexes are created in the same `V2__query_api_model.java` migration as the table, so the cluster moves atomically from the V1 to the V2 access pattern.
 
 ## 5. Validation rules
 
@@ -280,7 +282,7 @@ The existing layout (AGENTS.md §Layout, enforced by `LayerBoundaryTest`) is pre
   List<AuditEvent> findPage(...,  Pageable pageable);
   ```
   `Pageable` carries `limit + 1` (see §3.4).
-- `db/migration/V2__query_api_model.sql` — the migration described in §2.3.
+- `com/sam/auditlog/db/migration/V2__query_api_model.java` — the Flyway Java migration described in §2.3.
 - The least-privilege grant (`GRANT SELECT, INSERT`) is preserved on the new table, so the read path uses `SELECT` and never needs additional privileges.
 
 ### 6.4 Tests (conventions per AGENTS.md §Testing)
@@ -297,7 +299,7 @@ The existing layout (AGENTS.md §Layout, enforced by `LayerBoundaryTest`) is pre
 | Events are immutable                                           | Read path never mutates entities; `AuditEvent` constructor still copies `context` defensively; query results pass through `toResponse` unchanged. |
 | `timestamp` is server-assigned                                 | Unchanged — DB default `now()` and `@Generated(INSERT)` on the entity. ULID `id` is also server-assigned (app-side).             |
 | `actor` is required                                            | Both `actor.id` and `actor.type` are `NOT NULL` in DB and `@NotBlank` in the DTO; service rejects empty `actor` query param (422). |
-| Migrations are append-only files                               | New change goes in `V2__query_api_model.sql`. `V1__create_audit_events.sql` is not edited.                                       |
+| Migrations are append-only files                               | New change goes in `V2__query_api_model.java` (Flyway Java migration). `V1__create_audit_events.sql` is not edited.              |
 | App role privileges = `INSERT` + `SELECT`                      | Re-granted on the renamed table by V2; query path uses `SELECT` only.                                                            |
 | Java 21, Spring Boot 3, Maven; PostgreSQL, Flyway; Spring Data JPA; Testcontainers | All new code uses these; no new framework introduced. ULID library is a single small dep, picked in `tasks.md`.                  |
 | Layer layout (`controller` / `service` / `repository` / …)     | New classes go into the existing packages; `LayerBoundaryTest` continues to pass without rule changes.                           |
