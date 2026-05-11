@@ -23,6 +23,11 @@ import com.sam.auditlog.service.Cursor;
 import com.sam.auditlog.service.CursorCodec;
 import com.sam.auditlog.service.QuerySpec;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+
 @RestController
 @RequestMapping("/api/v1/audit-events")
 public class AuditEventController {
@@ -41,6 +46,16 @@ public class AuditEventController {
     }
 
     @PostMapping
+    @Operation(
+            summary = "Record a new audit event",
+            description =
+                    "Persists an immutable audit event. The server assigns id (ULID) and"
+                            + " timestamp; any client-supplied values for those fields are"
+                            + " ignored.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "Event created"),
+        @ApiResponse(responseCode = "400", description = "Request body failed validation")
+    })
     public ResponseEntity<AuditEventResponse> create(
             @Valid @RequestBody CreateAuditEventRequest request) {
         AuditEventResponse saved = service.record(request);
@@ -52,15 +67,51 @@ public class AuditEventController {
     }
 
     @GetMapping
+    @Operation(
+            summary = "List audit events with keyset pagination",
+            description =
+                    "Returns events ordered by (timestamp DESC, id DESC). Pages are opaque-cursor"
+                            + " paginated; pass next_cursor from one response as cursor on the next"
+                            + " request. The cursor encodes the originating filter set, so changing"
+                            + " any filter while paging is rejected with 422.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Page of events"),
+        @ApiResponse(
+                responseCode = "400",
+                description =
+                        "Parse-tier failure: malformed timestamp, non-integer limit, or"
+                                + " cursor that is not valid base64url(JSON)."),
+        @ApiResponse(
+                responseCode = "422",
+                description =
+                        "Semantic-tier failure: from >= to, limit outside [1, 200], blank"
+                                + " filter values, cursor whose filter hash does not match the"
+                                + " current request, or unsupported cursor schema version.")
+    })
     public ResponseEntity<AuditEventPage> query(
-            @RequestParam(required = false) String actor,
-            @RequestParam(required = false) String resource,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            @Parameter(description = "Filter by actor id (exact match).")
+                    @RequestParam(required = false)
+                    String actor,
+            @Parameter(description = "Filter by resource id (exact match).")
+                    @RequestParam(required = false)
+                    String resource,
+            @Parameter(description = "Inclusive lower bound on timestamp. RFC 3339 / ISO-8601.")
+                    @RequestParam(required = false)
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
                     Instant from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            @Parameter(description = "Exclusive upper bound on timestamp. RFC 3339 / ISO-8601.")
+                    @RequestParam(required = false)
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
                     Instant to,
-            @RequestParam(required = false) String cursor,
-            @RequestParam(required = false) Integer limit) {
+            @Parameter(
+                            description =
+                                    "Opaque pagination cursor from a previous response. Must be"
+                                        + " replayed with the same filter set that produced it.")
+                    @RequestParam(required = false)
+                    String cursor,
+            @Parameter(description = "Page size. Must be in [1, 200]. Defaults to 50.")
+                    @RequestParam(required = false)
+                    Integer limit) {
         Cursor decoded = cursor == null ? null : cursorCodec.decode(cursor);
         return ResponseEntity.ok(
                 queryService.query(new QuerySpec(actor, resource, from, to, decoded, limit)));
