@@ -8,6 +8,8 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 
+import org.springframework.stereotype.Component;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -15,11 +17,14 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 /**
  * Encodes and decodes opaque pagination cursors (base64url(JSON)) and computes the filter-set hash
- * that binds a cursor to its originating request. Pure (no Spring), reusable, thread-safe.
+ * that binds a cursor to its originating request. Stateless and thread-safe; managed as a Spring
+ * singleton but constructable directly (no DI dependencies of its own) so unit tests can {@code
+ * new} an instance.
  *
  * <p>The cursor is intentionally NOT signed: it grants no privilege beyond what its filter set
  * implies, and the filter-hash check rejects tampered or cross-pasted cursors with HTTP 422.
  */
+@Component
 public class CursorCodec {
 
     /** Bumped only when the on-the-wire shape of {@link Cursor} changes incompatibly. */
