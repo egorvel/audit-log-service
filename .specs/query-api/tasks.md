@@ -138,10 +138,12 @@ AC3.5, AC3.9a, AC3.9b.
   existing `errors: [...]` envelope.
 - `service.Cursor` — value record `(int v, Instant ts, String id, String fh)`.
 - `service.CursorCodec` — `String encode(Cursor)`, `Cursor decode(String)`,
-  `String filterHash(QuerySpec filtersOnly)`. No Spring deps, no I/O. Uses
-  `Base64.getUrlDecoder/Encoder` and a single shared `ObjectMapper`. Decode
-  failures → `CursorDecodeException`; unknown `v` and (later) hash mismatch
-  → `QueryValidationException`.
+  `String filterHash(String actor, String resource, Instant from, Instant to)`
+  (nullable args; matches the four-value sha256 input in design §3.3, so the
+  codec stays free of any service-layer type — `QuerySpec` is created in T5).
+  No Spring deps, no I/O. Uses `Base64.getUrlDecoder/Encoder` and a single
+  shared `ObjectMapper`. Decode failures → `CursorDecodeException`; unknown
+  `v` and (later) hash mismatch → `QueryValidationException`.
 - `controller.GlobalExceptionHandler` — add two `@ExceptionHandler`s:
   `CursorDecodeException` → 400 with the existing envelope shape;
   `QueryValidationException` → 422 with the existing envelope shape.
