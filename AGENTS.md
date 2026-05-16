@@ -4,9 +4,9 @@
 
 **Event shape:**
 - `timestamp` — set by the server, never by the client
-- `actor` — who initiated it (user id / service account), **required**
+- `actor` — who initiated it (user id / service account), has id and type (`{ "id": "u_42", "type": "user" }`), **required**
 - `action` — what happened (`resource.updated`, `user.login`, …)
-- `resource` — target object (`project:42`, `invoice:777`)
+- `resource` — target object (`{ "id": "9f3b...", "type": "order" }`)
 - `outcome` — `success` / `denied` / `error`
 - `context` — free-form JSON with details
 
@@ -16,7 +16,7 @@
 - .specs/<feature>/tasks.md - in what order. Decomposition into safe increments with refs to requirements.md and design.md, explicit and testable DoD, dependencies between tasks. Each task: one safe commit.
 - spec is the source of truth: gaps go to spec first, code second.
 - acceptance criteria must be written in EARS-style.
-- before writing any of requirements.md, design.md, tasks.md ask 5–7 clarifying questions. One decision = one question. If there is no real doubt, do not invent one.
+- **Always ask 5–7 clarifying questions** before creating or updating any of .specs/<feature>/{requirements,design,tasks}.md. One decision = one question. If there is no real doubt, do not invent one.
 
 ## Invariants
 
@@ -29,7 +29,7 @@
 - Make the smallest change that correctly solves the task. Do not refactor unrelated code, reformat entire files, rename public APIs, or clean up nearby code unless the task explicitly asks for it.
 - Do not make tests pass by weakening assertions, deleting tests, ignoring exceptions, increasing timeouts blindly, or suppressing errors. If a test is wrong, explain why and update it to assert the correct behavior.
 - Never print, copy, commit, or expose secrets.
-- Create a new branch for a new task.
+- Create a new branch for a **New task.**
 
 ## Architectural rules
 
@@ -40,11 +40,13 @@
 - Testcontainers
 
 **Persistence conventions:**
-- Schema changes go through Flyway migrations (`V{n}__description.sql`). Migrations are append-only too: never edit a shipped migration — add a new one.
+- Schema changes go through Flyway migrations (`src/main/resources/db/migration/V{n}__description.sql` or `src/main/java/com/sam/auditlog/db/migration/V{n}__description.java`).
+- Migrations are append-only too: never edit a shipped migration — add a new one.
 - The app's DB role has `INSERT` + `SELECT` on the events table and nothing else. `UPDATE`/`DELETE` privileges are not granted, not even to the migration role on the events table after it exists.
 
 **Testing conventions:**
 - Unit tests – no Spring context.
+- Use Mockito for mocks.
 - Integration tests with Testcontainers (real Postgres).
 
 **Layout**
@@ -55,3 +57,4 @@
 - Services: src/main/java/com/sam/auditlog/service
 - Repositories: src/main/java/com/sam/auditlog/repository
 - Entities: src/main/java/com/sam/auditlog/model
+- Specs: .specs/<feature>/{requirements,design,tasks}.md
