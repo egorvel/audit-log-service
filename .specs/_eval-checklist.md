@@ -11,4 +11,4 @@ Verify specs using the following criteria:
 - Cross-references resolve: every §X.Y, AC…, or "see Section …" points to a real section that says what's claimed.
 - Every AC is in EARS form (Ubiquitous / Event-driven / Unwanted / State-driven / Optional).
 
-For each item, emit PASS / FAIL / WEAK with one-line evidence. Save the report to .specs/<feature>/eval-report-<date>.md
+For each item, emit PASS / FAIL / WEAK with quoted, evidence-led reasoning. Save the report to `.specs/<feature>/eval-reports/eval-report-<YYYY-MM-DD-HHMM>.md`.
