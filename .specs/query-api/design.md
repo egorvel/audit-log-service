@@ -17,14 +17,14 @@ This replaces both `GET /api/v1/events` and `POST /api/v1/events`. The unified p
 
 | Name       | Type             | Required | Default | Notes                                                            |
 | ---------- | ---------------- | -------- | ------- | ---------------------------------------------------------------- |
-| `actor`    | string           | no       | —       | Matches `actor.id` exactly. Empty string is a 422.               |
-| `resource` | string           | no       | —       | Matches `resource.id` exactly. Empty string is a 422.            |
+| `actor`    | comma-separated list of 1–10 distinct ids | no | — | Matches `actor.id ∈ list` (§AC1.2). Duplicates are silently dropped (§AC1.11). Empty value (`actor=`), empty entry (`actor=a1,,a2`), or trailing comma ⇒ 400 (§AC1.12). >10 distinct ids after dedup ⇒ 422 (§AC1.13). |
+| `resource` | string           | no       | —       | Matches `resource.id` exactly. Empty value (`resource=`) ⇒ 400 (§AC1.14). |
 | `from`     | RFC 3339 instant | no       | —       | Inclusive lower bound. Parse failure ⇒ 400.                      |
 | `to`       | RFC 3339 instant | no       | —       | Exclusive upper bound. Parse failure ⇒ 400.                      |
 | `cursor`   | opaque string    | no       | —       | See §3. Undecodable ⇒ 400; decodable but unhonorable ⇒ 422.      |
 | `limit`    | integer          | no       | 50      | Non-integer ⇒ 400; out of [1, 200] ⇒ 422.                        |
 
-Filters are AND-combined. All four data filters may be omitted; the endpoint then paginates the entire stream (requirements §AC1.6).
+Filters are AND-combined. All four data filters may be omitted; the endpoint then paginates the entire stream (requirements §AC1.6). Only `actor` accepts a comma-separated list in this iteration; widening `resource`/`from`/`to` to lists is explicitly out of scope (requirements.md "Out of scope").
 
 ### 1.3 Success response
 
@@ -67,12 +67,14 @@ All errors share one envelope (already established by `GlobalExceptionHandler`):
 | 400    | `from` or `to` not RFC 3339 (§AC1.8)                                                                                              | Spring param-binding    |
 | 400    | `limit` not parseable as integer (§AC3.8a)                                                                                        | Spring param-binding    |
 | 400    | `cursor` cannot be base64/JSON-decoded (§AC3.9a)                                                                                  | service                 |
+| 400    | `actor` empty value or any empty entry in the comma-separated list (§AC1.12)                                                      | service                 |
+| 400    | `resource` empty value (§AC1.14)                                                                                                  | service                 |
 | 422    | `from >= to` (§AC1.9)                                                                                                             | service                 |
 | 422    | `limit` parses but is `< 1` or `> 200` (§AC3.8b)                                                                                  | service                 |
 | 422    | `cursor` decodes but its filter-hash disagrees with the current request, or its schema version is unknown (§AC3.5, §AC3.9b)       | service                 |
-| 422    | `actor` or `resource` present as empty string                                                                                     | service                 |
+| 422    | `actor` list contains more than 10 distinct ids after dedup (§AC1.13)                                                             | service                 |
 
-400 is reserved for *parse* failures (the request can't be turned into typed values). 422 is for requests that parse cleanly but are semantically rejected. The `GlobalExceptionHandler` is extended with a `@ResponseStatus(UNPROCESSABLE_ENTITY)` handler for a new `QueryValidationException` so the layer boundary stays clean (validation lives in the service; the controller translates).
+400 is for *structural* failures: the request cannot be turned into typed, non-empty values (an unparseable timestamp, a cursor that doesn't decode, or a present-but-empty filter that carries no information). 422 is for requests that parse cleanly with non-empty values but are semantically rejected (range inverted, limit out of bounds, cursor mismatched, list too long). The `GlobalExceptionHandler` is extended with a `@ResponseStatus(UNPROCESSABLE_ENTITY)` handler for a new `QueryValidationException` and a `@ResponseStatus(BAD_REQUEST)` handler for a new `EmptyFilterException`; both are thrown from the service so the layer boundary stays clean (validation lives in the service; the controller translates).
 
 ## 2. Data model
 
@@ -175,7 +177,7 @@ The cursor is base64url(JSON), no signing:
 ```
 
 - `v` lets us reject cursors from incompatible schema versions with **422** (§AC3.9b).
-- `fh` is `sha256(actor || "" || resource || "" || from || "" || to)` (`` is unit separator, not in any sane filter value). The server recomputes `fh` from the current request and rejects mismatch with **422** (§AC3.5). This catches both deliberate tampering and accidental cross-pasting of cursors between different queries; signing would add operational cost (key rotation) for a token that already grants no privilege beyond what its filter set implies.
+- `fh` is `sha256(actor_segment || "" || resource || "" || from || "" || to)` (`` is unit separator, not in any sane filter value). `actor_segment` is the deduplicated actor list (§AC1.11) sorted ascending lexicographically and joined by ``; the sort+dedup makes the hash a function of the *set* of actor ids, so a replay request that submits the same ids in any order or multiplicity reproduces the same `fh` — this realizes §AC3.11. The server recomputes `fh` from the current request and rejects mismatch with **422** (§AC3.5). This catches both deliberate tampering and accidental cross-pasting of cursors between different queries; signing would add operational cost (key rotation) for a token that already grants no privilege beyond what its filter set implies.
 - `ts`+`id` are the keyset state.
 
 The cursor is **not encrypted**. It does not contain user data the client did not already supply.
@@ -196,14 +198,19 @@ CREATE INDEX idx_events_res_ts_id    ON audit_events (resource_id, timestamp DES
 
 Coverage:
 
-| Filters present                  | Index used                  |
-| -------------------------------- | --------------------------- |
-| (none) / `from` / `to` / both    | `idx_events_ts_id`          |
-| `actor` (± time range)           | `idx_events_actor_ts_id`    |
-| `resource` (± time range)        | `idx_events_res_ts_id`      |
-| `actor` + `resource`             | `idx_events_actor_ts_id` *  |
+| Filters present                  | Index used                                                  |
+| -------------------------------- | ----------------------------------------------------------- |
+| (none) / `from` / `to` / both    | `idx_events_ts_id`                                          |
+| `actor` (single id, ± time range)| `idx_events_actor_ts_id` (B-tree seek)                      |
+| `actor` (list of 2–10, ± time range) | `idx_events_actor_ts_id` via `MergeAppend` / `BitmapOr` (see below) |
+| `resource` (± time range)        | `idx_events_res_ts_id`                                      |
+| `actor` + `resource`             | `idx_events_actor_ts_id` *                                  |
 
 \* The combined `actor` + `resource` case uses the actor index and post-filters by `resource_id`. A separate composite would be added only if profiling shows this case is hot — single-actor-single-resource queries are typically narrow enough that the actor index alone is fine.
+
+**Multi-actor query plan (no new index).** The multi-actor query is `WHERE actor_id IN (a₁, …, a_K) AND (timestamp, id) < (?,?) ORDER BY timestamp DESC, id DESC LIMIT N+1` with `K ∈ [1, 10]` (per §AC1.13) and `N ≤ 200`. Postgres serves this with the existing `idx_events_actor_ts_id`: it executes `K` per-actor index scans (each already sorted by `(timestamp DESC, id DESC)` because of the index's column order) and merges them via `MergeAppend`, pulling rows in global timestamp-desc order until `N+1` are produced. Cost is `O(K · log(K) · (N+1))` plus `K` index descents — at `K ≤ 10` and `N ≤ 200` this is negligible compared to a single full table scan. The `K = 1` case degenerates to the existing pure index seek with no overhead change.
+
+A new composite index would not help. A B-tree leading column has to be a single value, but the multi-actor predicate is a *set* of values; there is no useful single-column representation of "any of {a₁…a_K}" that B-tree can range-scan in `(timestamp, id)` order. A GIN index on `actor_id` would speed up the membership test in isolation but would then require a separate sort step (it cannot return rows in `(timestamp DESC, id DESC)` order), which is *worse* for keyset pagination than the current `MergeAppend` plan. The write-amplification cost of an extra index on a high-write append-only table is not justified by a plan that is already `O(K · log(K) · N)` at the documented cap. The standalone single-actor index is therefore the right answer for both the `K = 1` and the `K > 1` case.
 
 `actor_type` and `resource_type` are not filterable in v1 (out of scope), so they get no indexes. The pre-existing standalone `idx_audit_events_action` and `idx_audit_events_actor` from V1 are dropped — they no longer match the access pattern.
 
@@ -223,15 +230,19 @@ Implemented by Spring's parameter binding plus the existing `GlobalExceptionHand
 
 ### 5.2 Tier 2 — semantic (service)
 
-All semantic checks throw `QueryValidationException`, mapped to **422** by a new handler. They run *after* parse:
+Two service-thrown exceptions split by status:
 
-- `from >= to` when both are present.
-- `limit < 1` or `limit > 200`.
-- `actor`/`resource` present and empty (`""`) or all-whitespace.
-- Cursor `v` not in the supported set.
-- Cursor `fh` does not equal the recomputed hash of the current request's filter set.
+- `EmptyFilterException` → **400** (structural: a present-but-empty value). Thrown for:
+  - `actor=` (empty value) or any empty entry inside the comma-separated list (e.g. `actor=a1,,a2`, trailing `actor=a1,`) — §AC1.12.
+  - `resource=` (empty value) or all-whitespace — §AC1.14.
+- `QueryValidationException` → **422** (semantic: parses cleanly, non-empty, but invalid combination). Thrown for:
+  - `from >= to` when both are present (§AC1.9).
+  - `limit < 1` or `limit > 200` (§AC3.8b).
+  - `actor` list contains more than 10 distinct ids *after* dedup (§AC1.13). Dedup runs first so callers are not punished for sending `a1,a1` — the cap is on information content, not on raw token count.
+  - Cursor `v` not in the supported set (§AC3.9b).
+  - Cursor `fh` does not equal the recomputed hash of the current request's filter set (§AC3.5, §AC3.11 for the actor-set canonicalization).
 
-Validation lives in `AuditEventQueryService.validate(QuerySpec)`; the controller does not branch on these conditions. This keeps the layer boundary that `LayerBoundaryTest` enforces (controller depends on service, not the other way around).
+Both checks live in `AuditEventQueryService.validate(QuerySpec)`; the controller does not branch on these conditions. This keeps the layer boundary that `LayerBoundaryTest` enforces (controller depends on service, not the other way around). The order inside `validate` is: empty-filter checks → range/limit checks → dedup actor list → cap check → cursor decode/version/`fh` check — so the cap is always evaluated against the deduplicated set, and a malformed list never reaches the `IN` predicate in the repository.
 
 ## 6. Integration with API / domain / infrastructure layers
 
@@ -239,7 +250,7 @@ The existing layout (AGENTS.md §Layout, enforced by `LayerBoundaryTest`) is pre
 
 ### 6.1 API layer (`controller`, `dto`)
 
-- `AuditEventController` — `@RequestMapping` is moved from `/api/v1/events` to `/api/v1/audit-events`. The existing `POST` handler stays in place (now consuming the new structured DTO). A `@GetMapping` `query(...)` is added with `@RequestParam` arguments mapped 1:1 to §1.2. Returns `AuditEventPage`.
+- `AuditEventController` — `@RequestMapping` is moved from `/api/v1/events` to `/api/v1/audit-events`. The existing `POST` handler stays in place (now consuming the new structured DTO). A `@GetMapping` `query(...)` is added with `@RequestParam` arguments mapped 1:1 to §1.2. The `actor` parameter is bound as `@RequestParam(required = false) List<String> actor`; Spring's default comma-split applies, so `?actor=a,b,c` arrives as `["a","b","c"]`. Absence binds to `null` (no filter); a literal `?actor=` binds to a one-element list `[""]`, which the service rejects via `EmptyFilterException` → 400. The controller forwards the raw `List<String>` to the service and does *not* dedup or normalize itself — that lives in the service so cursor-hash canonicalization and the dedup-before-cap rule (§5.2) have a single owner. Returns `AuditEventPage`.
 - `dto.AuditEventPage` — record `(List<AuditEventResponse> events, String nextCursor)`. `nextCursor` is rendered as `next_cursor` (Jackson naming).
 - `dto.AuditEventResponse` — updated to:
   ```java
@@ -254,14 +265,14 @@ The existing layout (AGENTS.md §Layout, enforced by `LayerBoundaryTest`) is pre
   ```
 - `dto.ActorRef`, `dto.ResourceRef` — small records with `@NotBlank` on both fields (used by both read and write paths).
 - `dto.CreateAuditEventRequest` — actor/resource fields become `ActorRef`/`ResourceRef`. `@Valid` cascades into them.
-- `controller.GlobalExceptionHandler` — gains handlers for `QueryValidationException` (→ 422) and `CursorDecodeException` (→ 400). Body shape unchanged.
+- `controller.GlobalExceptionHandler` — gains handlers for `QueryValidationException` (→ 422), `CursorDecodeException` (→ 400), and `EmptyFilterException` (→ 400). Body shape unchanged.
 
 ### 6.2 Domain layer (`model`, `service`, `converter`)
 
 - `model.AuditEvent` — replaces `Long id` with `String id` (ULID, assigned at construction); replaces flat `actor`/`resource` strings with `actorId`, `actorType`, `resourceId`, `resourceType`. Stays immutable; `@Generated(INSERT)` on `timestamp` is preserved. The constructor's existing required-field checks (`Objects.requireNonNull(actor, …)` etc.) are tightened: each `_id` and `_type` is required (AGENTS.md "actor is required" continues to hold, now applied to `actor.id`).
 - `service.AuditEventQueryService` — new sibling of `AuditEventService`. Owns `query(QuerySpec) → AuditEventPage`, parses+validates the cursor, dispatches to the repository, and decides `next_cursor`. Splitting query off keeps the existing `record(...)` write path uncluttered and matches the typical CQRS-shaped split most teams adopt as audit logs grow read-heavy.
-- `service.QuerySpec` — internal record mirroring §1.2 plus a decoded `Cursor` value object. Not exposed in DTOs.
-- `service.CursorCodec` — encode/decode + filter-hash computation. Pure (no Spring).
+- `service.QuerySpec` — internal record mirroring §1.2 plus a decoded `Cursor` value object. Not exposed in DTOs. The `actor` field is held as `Set<String>` (or `null` when the filter is absent); the conversion `List<String> → Set<String>` is the dedup step from §AC1.11 and happens once, in the service entry point, before cap-checking and before cursor-hash recomputation. Holding it as a set in `QuerySpec` makes it structurally impossible to forget the dedup downstream.
+- `service.CursorCodec` — encode/decode + filter-hash computation. Pure (no Spring). The actor segment of the hash is computed as `String.join("", actors.stream().sorted().toList())` over the already-deduplicated `Set<String>` from `QuerySpec`; this gives the set-equal canonicalization required by §AC3.11 with no separate "is this the same set?" comparator on the read path.
 - `service.UlidFactory` — Spring `@Component`; injected wherever an `AuditEvent` is constructed.
 - `converter.AuditEventConverter` — `toResponse(AuditEvent)` builds the new nested DTO; `toEntity(CreateAuditEventRequest)` injects an `id` from `UlidFactory`.
 
@@ -271,7 +282,7 @@ The existing layout (AGENTS.md §Layout, enforced by `LayerBoundaryTest`) is pre
   ```java
   @Query(value = """
       SELECT e FROM AuditEvent e
-       WHERE (:actor    IS NULL OR e.actorId    = :actor)
+       WHERE (:actors   IS NULL OR e.actorId IN :actors)
          AND (:resource IS NULL OR e.resourceId = :resource)
          AND (:from     IS NULL OR e.timestamp >= :from)
          AND (:to       IS NULL OR e.timestamp <  :to)
@@ -281,7 +292,7 @@ The existing layout (AGENTS.md §Layout, enforced by `LayerBoundaryTest`) is pre
       """)
   List<AuditEvent> findPage(...,  Pageable pageable);
   ```
-  `Pageable` carries `limit + 1` (see §3.4).
+  `Pageable` carries `limit + 1` (see §3.4). `:actors` is bound as `Collection<String>` from the deduplicated `QuerySpec.actor`; the service passes `null` to disable the filter and a non-empty `Set<String>` otherwise. Hibernate expands `IN :actors` to `IN (?, ?, …)` with one bind per id, so the query planner has full visibility into the list size and can pick the `MergeAppend` over `idx_events_actor_ts_id` described in §4. The list is never empty here: an empty `actor=` value is rejected upstream by `EmptyFilterException` (§5.2) before the repository is reached, so the JPQL never has to defend against the JPA "empty IN list" portability hazard.
 - `com/sam/auditlog/db/migration/V2__query_api_model.java` — the Flyway Java migration described in §2.3.
 - The least-privilege grant (`GRANT SELECT, INSERT`) is preserved on the new table, so the read path uses `SELECT` and never needs additional privileges.
 
@@ -298,7 +309,7 @@ The existing layout (AGENTS.md §Layout, enforced by `LayerBoundaryTest`) is pre
 | Append-only events table                                       | V2 migration uses INSERT into a fresh table + DDL drop/rename; no `UPDATE`/`DELETE` against live rows. Triggers re-installed.    |
 | Events are immutable                                           | Read path never mutates entities; `AuditEvent` constructor still copies `context` defensively; query results pass through `toResponse` unchanged. |
 | `timestamp` is server-assigned                                 | Unchanged — DB default `now()` and `@Generated(INSERT)` on the entity. ULID `id` is also server-assigned (app-side).             |
-| `actor` is required                                            | Both `actor.id` and `actor.type` are `NOT NULL` in DB and `@NotBlank` in the DTO; service rejects empty `actor` query param (422). |
+| `actor` is required                                            | Both `actor.id` and `actor.type` are `NOT NULL` in DB and `@NotBlank` in the DTO; service rejects empty `actor` query param or any empty entry in its list (400 via `EmptyFilterException`; §AC1.12) and rejects lists of more than 10 distinct ids (422 via `QueryValidationException`; §AC1.13). |
 | Migrations are append-only files                               | New change goes in `V2__query_api_model.java` (Flyway Java migration). `V1__create_audit_events.sql` is not edited.              |
 | App role privileges = `INSERT` + `SELECT`                      | Re-granted on the renamed table by V2; query path uses `SELECT` only.                                                            |
 | Java 21, Spring Boot 3, Maven; PostgreSQL, Flyway; Spring Data JPA; Testcontainers | All new code uses these; no new framework introduced. ULID library is a single small dep, picked in `tasks.md`.                  |
@@ -315,3 +326,8 @@ The existing layout (AGENTS.md §Layout, enforced by `LayerBoundaryTest`) is pre
 - **Cursor outliving a schema bump.** The `v` field lets V3 reject V1 cursors with 422 instead of returning subtly wrong data.
 - **Tampered cursor.** Either decode fails (400) or the filter-hash check fails (422). Either way, no partial page is emitted (§AC3.9).
 - **`from` or `to` far in the future / past.** Treated as ordinary range filters — no rejection; the result set is just empty.
+- **Multi-actor list with duplicates.** `actor=a1,a1,a2` is indistinguishable from `actor=a1,a2` after the dedup in §AC1.11 — same result set, same `fh`, same cursor. The 10-id cap (§AC1.13) is evaluated *after* dedup, so a single repeated id never trips it.
+- **Multi-actor list with empty entries.** `actor=a1,,a2`, `actor=,a1`, `actor=a1,`, and bare `actor=` all hit `EmptyFilterException` → 400 (§5.2) before the dedup or cap stages run. The rule is "every entry must be non-empty", not "the list must be non-empty post-trim".
+- **Cursor replay with the actor list in a different order.** `?actor=a2,a1` followed by `?actor=a1,a2` for the next page is accepted: the `fh` segment for `actor` is built from the sorted-deduped set (§3.3), so the recomputed hash matches the cursor's hash. This is the §AC3.11 guarantee made operational.
+- **Cursor replay with a different actor set.** Adding or removing even one id (e.g. cursor minted under `actor=a1,a2`, replay submits `actor=a1`) changes the hashed set and is rejected with 422 by the `fh` check (§AC3.5) — the filter set the cursor was minted under no longer matches.
+- **Single actor's stream dominates the merge.** When one actor in the list has the freshest events, `MergeAppend` pulls almost exclusively from that actor's per-actor index scan; the other K-1 streams advance only when their next row enters the top-`N` window. No starvation: each stream is index-ordered and progress is monotonic.

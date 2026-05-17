@@ -38,6 +38,7 @@ These fields cannot be reliably reconstructed at the response boundary from the 
 - **AC1.11 — Ubiquitous.** When `actor=<id-list>` contains duplicate ids, the system shall deduplicate them before filter evaluation and before applying the cap in AC1.13; duplicates shall have no effect on which events are returned.
 - **AC1.12 — Unwanted.** If `actor` is provided with an empty value (`actor=`) or the comma-separated list contains an empty entry (e.g. `actor=a1,,a2` or a trailing comma `actor=a1,`), then the system shall reject the request with HTTP 400 and not return any events.
 - **AC1.13 — Unwanted.** If the deduplicated actor list (per AC1.11) contains more than 10 distinct ids, then the system shall reject the request with HTTP 422 and not return any events (the list parses as a syntactically valid set but exceeds the per-request cap).
+- **AC1.14 — Unwanted.** If `resource` is provided with an empty value (`resource=`), then the system shall reject the request with HTTP 400 and not return any events (symmetric with AC1.12 for `actor`: a present-but-empty filter carries no information and is treated as a structural failure, not a semantic one).
 
 ### Story 2 — SRE: reconstruct the timeline of a resource during an incident
 
