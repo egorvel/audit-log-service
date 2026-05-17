@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.Base64;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -86,8 +88,8 @@ class CursorCodecTest {
         Instant from = Instant.parse("2026-04-01T00:00:00Z");
         Instant to = Instant.parse("2026-05-01T00:00:00Z");
 
-        String a = codec.filterHash("u_42", "p_99", from, to);
-        String b = codec.filterHash("u_42", "p_99", from, to);
+        String a = codec.filterHash(Set.of("u_42"), "p_99", from, to);
+        String b = codec.filterHash(Set.of("u_42"), "p_99", from, to);
 
         assertThat(a).isEqualTo(b).startsWith("sha256:");
     }
@@ -96,31 +98,67 @@ class CursorCodecTest {
     void filterHash_differsWhenAnyFieldDiffers() {
         Instant from = Instant.parse("2026-04-01T00:00:00Z");
         Instant to = Instant.parse("2026-05-01T00:00:00Z");
-        String base = codec.filterHash("u_42", "p_99", from, to);
+        String base = codec.filterHash(Set.of("u_42"), "p_99", from, to);
 
-        assertThat(codec.filterHash("u_43", "p_99", from, to)).isNotEqualTo(base);
-        assertThat(codec.filterHash("u_42", "p_98", from, to)).isNotEqualTo(base);
-        assertThat(codec.filterHash("u_42", "p_99", from.plusSeconds(1), to)).isNotEqualTo(base);
-        assertThat(codec.filterHash("u_42", "p_99", from, to.plusSeconds(1))).isNotEqualTo(base);
+        assertThat(codec.filterHash(Set.of("u_43"), "p_99", from, to)).isNotEqualTo(base);
+        assertThat(codec.filterHash(Set.of("u_42"), "p_98", from, to)).isNotEqualTo(base);
+        assertThat(codec.filterHash(Set.of("u_42"), "p_99", from.plusSeconds(1), to))
+                .isNotEqualTo(base);
+        assertThat(codec.filterHash(Set.of("u_42"), "p_99", from, to.plusSeconds(1)))
+                .isNotEqualTo(base);
     }
 
     @Test
-    void filterHash_treatsNullAndEmptyConsistently() {
+    void filterHash_treatsNullAndEmptySetConsistently() {
         Instant t = Instant.parse("2026-04-01T00:00:00Z");
-        // null and "" must hash the same so a request that omits a filter hashes the same as
-        // one that explicitly passes "" (the latter is rejected upstream by validation, but the
-        // hash itself is just a function of the values it receives).
+        // Both null and Set.of() mean "no actor filter" and must hash identically. The service
+        // guarantees an empty set never reaches filterHash in practice (rejected upstream by
+        // EmptyFilterException), but the codec defends symmetry anyway.
         String hashWithNullActor = codec.filterHash(null, "r", t, t);
-        String hashWithEmptyActor = codec.filterHash("", "r", t, t);
-        assertThat(hashWithNullActor).isEqualTo(hashWithEmptyActor);
+        String hashWithEmptySet = codec.filterHash(Set.of(), "r", t, t);
+        assertThat(hashWithNullActor).isEqualTo(hashWithEmptySet);
+    }
+
+    @Test
+    void filterHash_isSetEqualAcrossOrderAndMultiplicity() {
+        // Requirements §AC3.11: the cursor's filter hash treats the actor list as a set, so a
+        // replay request that submits the same ids in any order (and any multiplicity, since
+        // duplicates are deduped upstream into a Set) reproduces the same hash.
+        Instant t = Instant.parse("2026-04-01T00:00:00Z");
+        String ab = codec.filterHash(Set.of("a", "b"), "r", t, t);
+        String ba = codec.filterHash(Set.of("b", "a"), "r", t, t);
+        // LinkedHashSet preserves insertion order; both still sort identically inside filterHash.
+        Set<String> ordered = new LinkedHashSet<>();
+        ordered.add("b");
+        ordered.add("a");
+        String orderedHash = codec.filterHash(ordered, "r", t, t);
+
+        assertThat(ab).isEqualTo(ba).isEqualTo(orderedHash);
+    }
+
+    @Test
+    void filterHash_differsByOneIdInSet() {
+        Instant t = Instant.parse("2026-04-01T00:00:00Z");
+        String ab = codec.filterHash(Set.of("a", "b"), "r", t, t);
+        String abc = codec.filterHash(Set.of("a", "b", "c"), "r", t, t);
+
+        assertThat(ab).isNotEqualTo(abc);
     }
 
     @Test
     void filterHash_resistsAdjacencyCollision() {
         // Without a separator, hash("ab", "c") would collide with hash("a", "bc"). The unit
-        // separator U+001F prevents this.
-        String a = codec.filterHash("ab", "c", null, null);
-        String b = codec.filterHash("a", "bc", null, null);
+        // separator U+001F prevents this. The same logic applies inside the multi-actor
+        // segment: {"ab"} || "c" vs {"a"} || "bc" must not collide.
+        String a = codec.filterHash(Set.of("ab"), "c", null, null);
+        String b = codec.filterHash(Set.of("a"), "bc", null, null);
         assertThat(a).isNotEqualTo(b);
+
+        // And inside the actor segment itself: {"ab","c"} (joined "abc") vs
+        // {"a","bc"} (joined "abc") must not collide because the inner separator
+        // sits at different positions.
+        String c = codec.filterHash(Set.of("ab", "c"), "r", null, null);
+        String d = codec.filterHash(Set.of("a", "bc"), "r", null, null);
+        assertThat(c).isNotEqualTo(d);
     }
 }

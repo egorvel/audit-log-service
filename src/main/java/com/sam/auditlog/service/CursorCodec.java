@@ -7,6 +7,8 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 
@@ -78,13 +80,21 @@ public class CursorCodec {
     }
 
     /**
-     * Hash of the filter set ({@code actor || resource || from || to}). Each field is rendered as
+     * Hash of the filter set ({@code actors || resource || from || to}). Each field is rendered as
      * its string form ({@link Instant#toString} for instants), with {@code null}/missing as the
      * empty string. Fields are joined with U+001F so adjacent values cannot collide.
+     *
+     * <p>The {@code actors} segment is the deduplicated set sorted ascending lexicographically and
+     * joined with the same U+001F separator: this makes the hash a function of the <em>set</em> of
+     * actor ids, so a replay request that submits the same ids in any order or multiplicity
+     * reproduces the same hash (requirements §AC3.11). A {@code null} or empty set hash identically
+     * (no actor filter); the service never passes an empty set in practice — empty input is
+     * rejected upstream by {@link EmptyFilterException} — so the empty-set branch is a defensive
+     * default, not a documented call site.
      */
-    public String filterHash(String actor, String resource, Instant from, Instant to) {
+    public String filterHash(Set<String> actors, String resource, Instant from, Instant to) {
         String joined =
-                nullSafe(actor)
+                actorSegment(actors)
                         + UNIT_SEPARATOR
                         + nullSafe(resource)
                         + UNIT_SEPARATOR
@@ -99,6 +109,13 @@ public class CursorCodec {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);
         }
+    }
+
+    private static String actorSegment(Set<String> actors) {
+        if (actors == null || actors.isEmpty()) {
+            return "";
+        }
+        return actors.stream().sorted().collect(Collectors.joining(UNIT_SEPARATOR));
     }
 
     private static String nullSafe(String s) {

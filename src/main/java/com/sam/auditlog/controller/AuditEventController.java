@@ -1,6 +1,8 @@
 package com.sam.auditlog.controller;
 
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
 
 import jakarta.validation.Valid;
 
@@ -89,7 +91,11 @@ public class AuditEventController {
                                 + " current request, or unsupported cursor schema version.")
     })
     public ResponseEntity<AuditEventPage> query(
-            @Parameter(description = "Filter by actor id (exact match).")
+            @Parameter(
+                            description =
+                                    "Filter by actor id. Comma-separated list of one or more"
+                                        + " distinct ids (set membership). Duplicates are silently"
+                                        + " dropped. Maximum 10 distinct ids per request.")
                     @RequestParam(required = false)
                     String actor,
             @Parameter(description = "Filter by resource id (exact match).")
@@ -113,7 +119,20 @@ public class AuditEventController {
                     @RequestParam(required = false)
                     Integer limit) {
         Cursor decoded = cursor == null ? null : cursorCodec.decode(cursor);
+        // Split with limit -1 so trailing/leading commas surface as blank entries (?actor=A, or
+        // ?actor=,A) and the structural validator can reject them with 400 per AC1.12. A bare
+        // ?actor= (key present, empty value) becomes a single blank entry and is rejected too.
+        List<String> actorList = actor == null ? null : Arrays.asList(actor.split(",", -1));
+        var canonicalActor = queryService.canonicalizeActor(actorList);
+        var validatedResource = queryService.requireNonBlankResource(resource);
         return ResponseEntity.ok(
-                queryService.query(new QuerySpec(actor, resource, from, to, decoded, limit)));
+                queryService.query(
+                        new QuerySpec(
+                                canonicalActor,
+                                validatedResource,
+                                from,
+                                to,
+                                decoded,
+                                limit)));
     }
 }

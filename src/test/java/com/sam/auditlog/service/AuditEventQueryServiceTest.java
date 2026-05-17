@@ -8,8 +8,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -82,32 +84,123 @@ class AuditEventQueryServiceTest {
                 .hasMessageContaining("limit");
     }
 
+    // ----- structural rejections (400) — actor/resource empty/blank are now upstream of validate -----
+
     @Test
-    void query_blankActor_throws422() {
-        QuerySpec spec = new QuerySpec("   ", null, null, null, null, 10);
-        assertThatThrownBy(() -> service.query(spec))
-                .isInstanceOf(QueryValidationException.class)
-                .hasMessageContaining("actor");
+    void canonicalizeActor_blankEntry_throws400() {
+        // AC1.12: any blank entry in the comma-separated list is a structural failure → 400.
+        assertThatThrownBy(() -> service.canonicalizeActor(List.of("a1", "   ", "a2")))
+                .isInstanceOf(EmptyFilterException.class)
+                .hasMessageContaining("actor[1]");
     }
 
     @Test
-    void query_blankResource_throws422() {
-        QuerySpec spec = new QuerySpec(null, "", null, null, null, 10);
+    void canonicalizeActor_singleEmptyEntry_throws400() {
+        // ?actor= binds in Spring as [""]; one bad entry, one 400.
+        assertThatThrownBy(() -> service.canonicalizeActor(List.of("")))
+                .isInstanceOf(EmptyFilterException.class)
+                .hasMessageContaining("actor[0]");
+    }
+
+    @Test
+    void canonicalizeActor_nullOrEmptyList_returnsNull() {
+        assertThat(service.canonicalizeActor(null)).isNull();
+        assertThat(service.canonicalizeActor(List.of())).isNull();
+    }
+
+    @Test
+    void canonicalizeActor_dedup_returnsDistinctSet() {
+        // AC1.11: duplicates collapse silently.
+        Set<String> result = service.canonicalizeActor(List.of("a", "a", "b"));
+        assertThat(result).containsExactlyInAnyOrder("a", "b");
+    }
+
+    @Test
+    void canonicalizeActor_atCap_doesNotThrow() {
+        // The 10-distinct cap is a downstream concern of validate(); canonicalize never throws on
+        // size, so an 11-distinct list returns an 11-element set and the cap is enforced later.
+        Set<String> result =
+                service.canonicalizeActor(
+                        List.of("a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11"));
+        assertThat(result).hasSize(11);
+    }
+
+    @Test
+    void requireNonBlankResource_blank_throws400() {
+        // AC1.14: resource present but empty/blank is a structural failure → 400.
+        assertThatThrownBy(() -> service.requireNonBlankResource(""))
+                .isInstanceOf(EmptyFilterException.class)
+                .hasMessageContaining("resource");
+        assertThatThrownBy(() -> service.requireNonBlankResource("   "))
+                .isInstanceOf(EmptyFilterException.class);
+    }
+
+    @Test
+    void requireNonBlankResource_nullOrPresent_passesThrough() {
+        assertThat(service.requireNonBlankResource(null)).isNull();
+        assertThat(service.requireNonBlankResource("p_42")).isEqualTo("p_42");
+    }
+
+    @Test
+    void query_actorSetOver10_throws422() {
+        // AC1.13: more than 10 distinct ids after dedup → 422.
+        Set<String> eleven =
+                Set.of("a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11");
+        QuerySpec spec = new QuerySpec(eleven, null, null, null, null, 10);
+
         assertThatThrownBy(() -> service.query(spec))
                 .isInstanceOf(QueryValidationException.class)
-                .hasMessageContaining("resource");
+                .hasMessageContaining("at most 10");
     }
 
     @Test
     void query_cursorFhMismatch_throws422() {
-        // Cursor was encoded with filter actor=alice; current request has actor=bob -> mismatch.
+        // Cursor was encoded with filter actor={alice}; current request has actor={bob} -> mismatch.
         Cursor encodedWithAlice =
                 new Cursor(
                         CursorCodec.CURRENT_VERSION,
                         t0.plusSeconds(5),
                         "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
-                        codec.filterHash("alice", null, null, null));
-        QuerySpec spec = new QuerySpec("bob", null, null, null, encodedWithAlice, 10);
+                        codec.filterHash(Set.of("alice"), null, null, null));
+        QuerySpec spec = new QuerySpec(Set.of("bob"), null, null, null, encodedWithAlice, 10);
+
+        assertThatThrownBy(() -> service.query(spec))
+                .isInstanceOf(QueryValidationException.class)
+                .hasMessageContaining("filter set");
+    }
+
+    @Test
+    void query_cursorFhMatchesAcrossReorderedActorSet() {
+        // AC3.11: cursor minted under {a,b} accepted when replayed with {b,a}.
+        when(repository.findPage(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of());
+
+        Cursor mintedWithAB =
+                new Cursor(
+                        CursorCodec.CURRENT_VERSION,
+                        t0.plusSeconds(5),
+                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
+                        codec.filterHash(Set.of("a", "b"), null, null, null));
+        Set<String> reordered = new LinkedHashSet<>();
+        reordered.add("b");
+        reordered.add("a");
+        QuerySpec spec = new QuerySpec(reordered, null, null, null, mintedWithAB, 10);
+
+        // No exception thrown — the page is empty but validation passes.
+        AuditEventPage page = service.query(spec);
+        assertThat(page.events()).isEmpty();
+    }
+
+    @Test
+    void query_cursorFhMismatchOnDifferentActorSet() {
+        // AC3.11 negative case: a one-id difference in the set → 422.
+        Cursor mintedWithAB =
+                new Cursor(
+                        CursorCodec.CURRENT_VERSION,
+                        t0.plusSeconds(5),
+                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
+                        codec.filterHash(Set.of("a", "b"), null, null, null));
+        QuerySpec spec = new QuerySpec(Set.of("a"), null, null, null, mintedWithAB, 10);
 
         assertThatThrownBy(() -> service.query(spec))
                 .isInstanceOf(QueryValidationException.class)
@@ -134,7 +227,8 @@ class AuditEventQueryServiceTest {
         List<AuditEvent> rows = seedEvents(limit + 1);
         when(repository.findPage(any(), any(), any(), any(), any(), any(), any())).thenReturn(rows);
 
-        AuditEventPage page = service.query(new QuerySpec("a", null, null, null, null, limit));
+        AuditEventPage page =
+                service.query(new QuerySpec(Set.of("a"), null, null, null, null, limit));
 
         assertThat(page.events()).hasSize(limit);
         assertThat(page.nextCursor()).isNotNull();
@@ -143,7 +237,7 @@ class AuditEventQueryServiceTest {
         AuditEvent boundary = rows.get(limit - 1);
         assertThat(decoded.ts()).isEqualTo(boundary.timestamp());
         assertThat(decoded.id()).isEqualTo(boundary.id());
-        assertThat(decoded.fh()).isEqualTo(codec.filterHash("a", null, null, null));
+        assertThat(decoded.fh()).isEqualTo(codec.filterHash(Set.of("a"), null, null, null));
         assertThat(decoded.v()).isEqualTo(CursorCodec.CURRENT_VERSION);
     }
 

@@ -11,6 +11,7 @@ import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -239,7 +240,7 @@ class AuditEventQueryIntegrationTest {
                         CursorCodec.CURRENT_VERSION,
                         ANCHOR,
                         UlidCreator.getMonotonicUlid().toString(),
-                        codec.filterHash("alice", null, null, null));
+                        codec.filterHash(Set.of("alice"), null, null, null));
         String token = codec.encode(cursor);
 
         // Replay with no actor filter -> filter set differs -> 422.
@@ -434,6 +435,192 @@ class AuditEventQueryIntegrationTest {
         assertThat(body.has("next_cursor")).isFalse();
     }
 
+    // ---------- Multi-actor filter (AC1.2 reformulated, AC1.11-14, AC3.11, AC3.12) ----------
+
+    @Test
+    void filterByMultipleActors_returnsUnion() throws Exception {
+        String tag = "multiActor";
+        Instant from = windowStart(tag);
+        Instant to = from.plusSeconds(600);
+        seed(from, 2, tag + "_A", "res");
+        seed(from.plusSeconds(10), 2, tag + "_B", "res");
+        seed(from.plusSeconds(20), 2, tag + "_C", "res");
+
+        JsonNode multi =
+                getOk(
+                        "/api/v1/audit-events?actor="
+                                + tag
+                                + "_A,"
+                                + tag
+                                + "_B&from="
+                                + from
+                                + "&to="
+                                + to
+                                + "&limit=50");
+        JsonNode onlyA =
+                getOk(
+                        "/api/v1/audit-events?actor="
+                                + tag
+                                + "_A&from="
+                                + from
+                                + "&to="
+                                + to
+                                + "&limit=50");
+        JsonNode onlyB =
+                getOk(
+                        "/api/v1/audit-events?actor="
+                                + tag
+                                + "_B&from="
+                                + from
+                                + "&to="
+                                + to
+                                + "&limit=50");
+
+        Set<String> union = new HashSet<>(ids(onlyA.get("events")));
+        union.addAll(ids(onlyB.get("events")));
+        Set<String> got = new HashSet<>(ids(multi.get("events")));
+
+        assertThat(multi.get("events")).hasSize(4);
+        assertThat(got).isEqualTo(union);
+    }
+
+    @Test
+    void actorListDedup_isInvariant() throws Exception {
+        String tag = "dedup";
+        Instant from = windowStart(tag);
+        Instant to = from.plusSeconds(600);
+        seed(from, 2, tag + "_A", "res");
+        seed(from.plusSeconds(10), 2, tag + "_B", "res");
+
+        JsonNode withDupes =
+                getOk(
+                        "/api/v1/audit-events?actor="
+                                + tag
+                                + "_A,"
+                                + tag
+                                + "_A,"
+                                + tag
+                                + "_B&from="
+                                + from
+                                + "&to="
+                                + to
+                                + "&limit=50");
+        JsonNode canonical =
+                getOk(
+                        "/api/v1/audit-events?actor="
+                                + tag
+                                + "_A,"
+                                + tag
+                                + "_B&from="
+                                + from
+                                + "&to="
+                                + to
+                                + "&limit=50");
+
+        // AC1.11: dedup is silent and total - the event list and next_cursor are identical.
+        assertThat(ids(withDupes.get("events"))).isEqualTo(ids(canonical.get("events")));
+        assertThat(withDupes.get("next_cursor")).isEqualTo(canonical.get("next_cursor"));
+    }
+
+    @Test
+    void actorEmptyOrEmptyEntry_returns400() throws Exception {
+        // AC1.12: structural failures - present-but-empty or any blank entry -> 400.
+        for (String raw : List.of("", "A,,B", "A,", ",A")) {
+            mvc.perform(get("/api/v1/audit-events?actor=" + raw))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").value("Empty filter value"));
+        }
+    }
+
+    @Test
+    void actorListCap_tenDistinctOk_elevenDistinct422_twelveRawTenDistinctOk() throws Exception {
+        // AC1.13: cap is on distinct count after dedup, not on raw entry count.
+        mvc.perform(get("/api/v1/audit-events?actor=a1,a2,a3,a4,a5,a6,a7,a8,a9,a10"))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/v1/audit-events?actor=a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0]").value(org.hamcrest.Matchers.containsString("at most 10")));
+
+        // 12 raw entries but only 10 distinct after dedup -> accepted.
+        mvc.perform(get("/api/v1/audit-events?actor=A,A,B,B,C,D,E,F,G,H,I,J"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void resourceEmpty_returns400() throws Exception {
+        // AC1.14: present-but-blank resource is a structural failure -> 400, not 422.
+        mvc.perform(get("/api/v1/audit-events?resource="))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Empty filter value"));
+    }
+
+    @Test
+    void cursorReplayIsActorSetEqual() throws Exception {
+        // AC3.11: cursor minted under {A,B} accepted when replayed with {A,B} or {B,A},
+        // rejected when replayed with any different set.
+        String mintedFh = codec.filterHash(Set.of("A", "B"), null, null, null);
+        Cursor minted =
+                new Cursor(
+                        CursorCodec.CURRENT_VERSION,
+                        ANCHOR,
+                        UlidCreator.getMonotonicUlid().toString(),
+                        mintedFh);
+        String token = codec.encode(minted);
+
+        mvc.perform(get("/api/v1/audit-events?actor=A,B&cursor=" + token))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/audit-events?actor=B,A&cursor=" + token))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/audit-events?actor=A,B,C&cursor=" + token))
+                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get("/api/v1/audit-events?actor=A&cursor=" + token))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void walkMultiActor_unionAndNoDup() throws Exception {
+        String tag = "walkMulti";
+        Instant from = windowStart(tag);
+        Instant to = from.plusSeconds(3600);
+        int perActor = 4;
+        seedSequential(from, perActor, tag + "_A", "res");
+        seedSequential(from.plusSeconds(100), perActor, tag + "_B", "res");
+        seedSequential(from.plusSeconds(200), perActor, tag + "_C", "res");
+
+        Set<String> seen = new HashSet<>();
+        String nextCursor = null;
+        int pages = 0;
+        while (true) {
+            String url =
+                    "/api/v1/audit-events?actor="
+                            + tag
+                            + "_A,"
+                            + tag
+                            + "_B,"
+                            + tag
+                            + "_C&from="
+                            + from
+                            + "&to="
+                            + to
+                            + "&limit=3"
+                            + (nextCursor == null ? "" : "&cursor=" + nextCursor);
+            JsonNode page = getOk(url);
+            pages++;
+            for (JsonNode e : page.get("events")) {
+                String id = e.get("id").asText().trim();
+                assertThat(seen.add(id)).as("no duplicate id %s across pages", id).isTrue();
+            }
+            if (page.get("next_cursor") == null || page.get("next_cursor").isNull()) {
+                break;
+            }
+            nextCursor = page.get("next_cursor").asText();
+            assertThat(pages).isLessThan(10).as("paging should terminate");
+        }
+        // AC3.12: union over all pages equals the seeded set; no dupes, no losses.
+        assertThat(seen).hasSize(3 * perActor);
+    }
+
     // ---------- helpers ----------
 
     private JsonNode getOk(String url) throws Exception {
@@ -467,7 +654,6 @@ class AuditEventQueryIntegrationTest {
                 resource);
     }
 
-    @SuppressWarnings("unused")
     private static List<String> ids(JsonNode events) {
         List<String> ids = new ArrayList<>();
         events.forEach(e -> ids.add(e.get("id").asText().trim()));

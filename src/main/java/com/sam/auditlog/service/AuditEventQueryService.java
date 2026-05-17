@@ -1,7 +1,9 @@
 package com.sam.auditlog.service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,9 @@ public class AuditEventQueryService {
     public static final int MIN_LIMIT = 1;
 
     public static final int MAX_LIMIT = 200;
+
+    /** Per-request cap on distinct {@code actor} ids after dedup (AC1.13 / design §5.2). */
+    public static final int MAX_DISTINCT_ACTORS = 10;
 
     private final AuditEventRepository repository;
     private final AuditEventConverter converter;
@@ -86,11 +91,12 @@ public class AuditEventQueryService {
         if (effectiveLimit < MIN_LIMIT || effectiveLimit > MAX_LIMIT) {
             errors.add("limit: must be between " + MIN_LIMIT + " and " + MAX_LIMIT);
         }
-        if (spec.actor() != null && spec.actor().isBlank()) {
-            errors.add("actor: must not be blank");
-        }
-        if (spec.resource() != null && spec.resource().isBlank()) {
-            errors.add("resource: must not be blank");
+        if (spec.actor() != null && spec.actor().size() > MAX_DISTINCT_ACTORS) {
+            errors.add(
+                    "actor: at most "
+                            + MAX_DISTINCT_ACTORS
+                            + " distinct ids per request, got "
+                            + spec.actor().size());
         }
         if (spec.cursor() != null) {
             if (spec.cursor().v() != CursorCodec.CURRENT_VERSION) {
@@ -105,5 +111,43 @@ public class AuditEventQueryService {
         if (!errors.isEmpty()) {
             throw new QueryValidationException(errors);
         }
+    }
+
+    /**
+     * Canonicalize the raw actor list from the request: reject empty/blank entries with {@link
+     * EmptyFilterException} (HTTP 400, requirements §AC1.12), then dedup into a {@link Set}
+     * (requirements §AC1.11). Returns {@code null} when no actor filter is present so downstream
+     * consumers treat it identically to the parameter being absent. The 10-distinct-id cap
+     * (requirements §AC1.13) is checked downstream in {@link #validate} — this helper is the
+     * structural (400) tier; the cap is semantic (422).
+     */
+    public Set<String> canonicalizeActor(List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        List<String> badIndices = new ArrayList<>();
+        for (int i = 0; i < raw.size(); i++) {
+            String entry = raw.get(i);
+            if (entry == null || entry.isBlank()) {
+                badIndices.add("actor[" + i + "]: must not be blank");
+            }
+        }
+        if (!badIndices.isEmpty()) {
+            throw new EmptyFilterException(badIndices);
+        }
+        // LinkedHashSet preserves request order so error messages and debug logs are
+        // reproducible; the cursor-hash canonicalization sorts at hash time regardless.
+        return new LinkedHashSet<>(raw);
+    }
+
+    /**
+     * Reject a present-but-blank {@code resource} value with {@link EmptyFilterException} (HTTP
+     * 400, requirements §AC1.14). Returns the value unchanged when absent or non-blank.
+     */
+    public String requireNonBlankResource(String raw) {
+        if (raw != null && raw.isBlank()) {
+            throw new EmptyFilterException("resource: must not be blank");
+        }
+        return raw;
     }
 }
