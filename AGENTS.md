@@ -25,7 +25,7 @@
 - **Events are immutable.** Once written, an `AuditEvent` instance is never mutated in memory or in storage.
 - **`timestamp` is server-assigned.** The API ignores any client-supplied timestamp.
 - **`actor` is required.** Rejected at the API boundary (validation) *and* enforced as `NOT NULL` in the schema. An event without an actor must never reach the repository.
-- Before declaring done: compile and run the tests.
+- **Before declaring done: run `mvn -B -ntp verify` locally and confirm `BUILD SUCCESS`.** Do not split this into "just the tests" or "just compile". If Spotless fails, run `mvn spotless:apply` and re-run `verify`. Never skip with `-DskipTests`, `-Dspotless.check.skip`, or similar flags.
 - Prefer existing project patterns over new abstractions. Before adding a new abstraction, dependency, folder, framework, or test style search for an existing equivalent in the repo.
 - Make the smallest change that correctly solves the task. Do not refactor unrelated code, reformat entire files, rename public APIs, or clean up nearby code unless the task explicitly asks for it.
 - Do not make tests pass by weakening assertions, deleting tests, ignoring exceptions, increasing timeouts blindly, or suppressing errors. If a test is wrong, explain why and update it to assert the correct behavior.
