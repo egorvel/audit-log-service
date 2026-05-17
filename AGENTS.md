@@ -11,12 +11,13 @@
 - `context` — free-form JSON with details
 
 **Specs:**
-- .specs/<feature>/requirements.md - what and why. Contain sections Context, User stories with AC, Out of scope, Open questions.
-- .specs/<feature>/design.md - how. API contract, data model, validation rules, invariants, edge cases, integration.
-- .specs/<feature>/tasks.md - in what order. Decomposition into safe increments with refs to requirements.md and design.md, explicit and testable DoD, dependencies between tasks. Each task: one safe commit.
+- `.specs/<feature>/requirements.md` - what and why. Contain sections Context, User stories with AC, Out of scope, Open/Resolved questions.
+- `.specs/<feature>/design.md` - how. API contract, data model, validation rules, invariants, edge cases, integration.
+- `.specs/<feature>/tasks.md` - in what order. Decomposition into safe increments with refs to requirements.md and design.md, explicit and testable DoD, dependencies between tasks. Each task: one safe commit.
 - spec is the source of truth: gaps go to spec first, code second.
 - acceptance criteria must be written in EARS-style.
-- **Always ask 5–7 clarifying questions** before creating or updating any of .specs/<feature>/{requirements,design,tasks}.md. One decision = one question. If there is no real doubt, do not invent one.
+- Open questions are resolved in `.specs/<feature>/{design,tasks}.md`; `requirements.md` renames `## Open questions` → `## Resolved questions` with each resolution inlined and a pointer to the file where the decision is justified.
+- **Always ask 5–7 clarifying questions** before creating or updating any of `.specs/<feature>/{requirements,design,tasks}.md`. One decision = one question. If there is no real doubt, do not invent one.
 
 ## Invariants
 
@@ -30,6 +31,7 @@
 - Do not make tests pass by weakening assertions, deleting tests, ignoring exceptions, increasing timeouts blindly, or suppressing errors. If a test is wrong, explain why and update it to assert the correct behavior.
 - Never print, copy, commit, or expose secrets.
 - Create a new branch for a **New task.**
+- Hooks and skills live in both `.claude/` and `.codex/`; mirror any change across both folders so the two agent environments behave identically.
 
 ## Architectural rules
 
@@ -50,11 +52,11 @@
 - Integration tests with Testcontainers (real Postgres).
 
 **Layout**
-- Java configs: : src/main/java/com/sam/auditlog/config
-- Controllers: src/main/java/com/sam/auditlog/controller
-- Converters: src/main/java/com/sam/auditlog/converter
-- DTOs: src/main/java/com/sam/auditlog/dto
-- Services: src/main/java/com/sam/auditlog/service
-- Repositories: src/main/java/com/sam/auditlog/repository
-- Entities: src/main/java/com/sam/auditlog/model
-- Specs: .specs/<feature>/{requirements,design,tasks}.md
+- Java configs: : `src/main/java/com/sam/auditlog/config`
+- Controllers: `src/main/java/com/sam/auditlog/controller`
+- Converters: `src/main/java/com/sam/auditlog/converter`
+- DTOs: `src/main/java/com/sam/auditlog/dto`
+- Services: `src/main/java/com/sam/auditlog/service`
+- Repositories: `src/main/java/com/sam/auditlog/repository`
+- Entities: `src/main/java/com/sam/auditlog/model`
+- Specs: `.specs/<feature>/{requirements,design,tasks}.md`
