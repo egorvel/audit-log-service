@@ -158,8 +158,7 @@ class AuditEventRepositoryQueryIT {
         seedSequential(tag, 6, from);
 
         List<AuditEvent> firstPage =
-                repository.findPage(
-                        List.of(tag), null, from, to, null, null, PageRequest.of(0, 3));
+                repository.findPage(List.of(tag), null, from, to, null, null, PageRequest.of(0, 3));
         assertThat(firstPage).hasSize(3);
 
         AuditEvent last = firstPage.get(firstPage.size() - 1);
@@ -190,8 +189,7 @@ class AuditEventRepositoryQueryIT {
 
         // Caller asks for limit+1 = 4. If exactly 4 came back, more rows exist.
         List<AuditEvent> rows =
-                repository.findPage(
-                        List.of(tag), null, from, to, null, null, PageRequest.of(0, 4));
+                repository.findPage(List.of(tag), null, from, to, null, null, PageRequest.of(0, 4));
 
         assertThat(rows).hasSize(4);
     }

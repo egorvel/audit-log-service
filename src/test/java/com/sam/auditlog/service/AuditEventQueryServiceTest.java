@@ -84,7 +84,8 @@ class AuditEventQueryServiceTest {
                 .hasMessageContaining("limit");
     }
 
-    // ----- structural rejections (400) — actor/resource empty/blank are now upstream of validate -----
+    // ----- structural rejections (400) — actor/resource empty/blank are now upstream of validate
+    // -----
 
     @Test
     void canonicalizeActor_blankEntry_throws400() {
@@ -121,7 +122,9 @@ class AuditEventQueryServiceTest {
         // size, so an 11-distinct list returns an 11-element set and the cap is enforced later.
         Set<String> result =
                 service.canonicalizeActor(
-                        List.of("a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11"));
+                        List.of(
+                                "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10",
+                                "a11"));
         assertThat(result).hasSize(11);
     }
 
@@ -155,7 +158,8 @@ class AuditEventQueryServiceTest {
 
     @Test
     void query_cursorFhMismatch_throws422() {
-        // Cursor was encoded with filter actor={alice}; current request has actor={bob} -> mismatch.
+        // Cursor was encoded with filter actor={alice}; current request has actor={bob} ->
+        // mismatch.
         Cursor encodedWithAlice =
                 new Cursor(
                         CursorCodec.CURRENT_VERSION,

@@ -11,7 +11,6 @@ import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -540,7 +539,9 @@ class AuditEventQueryIntegrationTest {
 
         mvc.perform(get("/api/v1/audit-events?actor=a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11"))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.errors[0]").value(org.hamcrest.Matchers.containsString("at most 10")));
+                .andExpect(
+                        jsonPath("$.errors[0]")
+                                .value(org.hamcrest.Matchers.containsString("at most 10")));
 
         // 12 raw entries but only 10 distinct after dedup -> accepted.
         mvc.perform(get("/api/v1/audit-events?actor=A,A,B,B,C,D,E,F,G,H,I,J"))
