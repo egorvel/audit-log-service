@@ -23,6 +23,7 @@ CHECKLIST_FALLBACK = [
     "No contradictions between requirements.md, design.md, and tasks.md (same fact, same answer everywhere).",
     'Cross-references resolve: every \u00a7X.Y, AC..., or "see Section ..." points to a real section that says what\'s claimed.',
     "Every AC is in EARS form (Ubiquitous / Event-driven / Unwanted / State-driven / Optional).",
+    "Open questions are resolved in design.md / tasks.md; requirements.md renames ## Open questions \u2192 ## Resolved questions with each resolution inlined and a pointer to the file where the decision is justified.",
 ]
 
 EARS_LABELS = {"Ubiquitous", "Event-driven", "Unwanted", "State-driven", "Optional"}
@@ -380,6 +381,54 @@ def live_mentions(text: str, token: str) -> list[str]:
     return hits
 
 
+def open_questions_resolved(requirements: str) -> tuple[str, str]:
+    section_pattern = r"^##\s+{name}\s*\n(.*?)(?=^##\s|\Z)"
+    open_match = re.search(
+        section_pattern.format(name=r"Open\s+questions"),
+        requirements,
+        re.MULTILINE | re.DOTALL | re.IGNORECASE,
+    )
+    resolved_match = re.search(
+        section_pattern.format(name=r"Resolved\s+questions"),
+        requirements,
+        re.MULTILINE | re.DOTALL | re.IGNORECASE,
+    )
+
+    if open_match:
+        body = open_match.group(1).strip()
+        if not body or re.match(r"^(none\.?|no\s+open\s+questions\.?)\s*$", body, re.IGNORECASE):
+            return "PASS", "`requirements.md` has no outstanding items under `## Open questions`."
+        return (
+            "FAIL",
+            "`requirements.md` still has a live `## Open questions` section; resolve each in `design.md`/`tasks.md`, then rename it to `## Resolved questions` with each resolution inlined.",
+        )
+
+    if resolved_match:
+        body = resolved_match.group(1).strip()
+        items = re.split(r"^\s*\d+\.\s+", body, flags=re.MULTILINE)[1:]
+        if not items:
+            return (
+                "WEAK",
+                "`requirements.md` has `## Resolved questions` but no enumerated items were detected; confirm each resolution is inlined with a pointer to `design.md`/`tasks.md`.",
+            )
+        weak_items: list[str] = []
+        for item in items:
+            title_match = re.match(r"\*\*(.+?)\*\*", item, re.DOTALL)
+            title = title_match.group(1).strip() if title_match else item.splitlines()[0][:60].strip()
+            has_resolution = "resolution" in item.lower()
+            has_pointer = bool(re.search(r"(design|tasks)\.md", item, re.IGNORECASE))
+            if not (has_resolution and has_pointer):
+                weak_items.append(title)
+        if weak_items:
+            return (
+                "WEAK",
+                "`## Resolved questions` items missing an inlined resolution or `design.md`/`tasks.md` pointer: " + "; ".join(weak_items) + ".",
+            )
+        return "PASS", f"`## Resolved questions` lists {len(items)} item(s), each with an inlined resolution and a `design.md`/`tasks.md` pointer."
+
+    return "PASS", "`requirements.md` has no `## Open questions` or `## Resolved questions` section."
+
+
 def contradiction_issues(requirements: str, design: str, tasks: str) -> tuple[str, str]:
     req_open_questions = "## Open questions" in requirements and not re.search(
         r"## Open questions\s+\n\s*(None|No open questions)", requirements, re.IGNORECASE
@@ -487,6 +536,8 @@ def evaluate_feature(root: Path, feature: str, checks: list[str]) -> tuple[Path,
                 results.append((check, "FAIL", "These ACs do not match their EARS labels: " + ", ".join(bad) + "."))
             else:
                 results.append((check, "PASS", "Every AC has a recognized EARS label and matching sentence shape."))
+        elif normalized.startswith("open questions are resolved"):
+            results.append((check, *open_questions_resolved(requirements)))
         else:
             results.append((check, "WEAK", "Checklist item was not recognized by the hook evaluator; manual review required."))
 
