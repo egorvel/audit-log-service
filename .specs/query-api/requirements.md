@@ -8,7 +8,7 @@ An API to read audit events should be implemented for the three primary consumer
 - **SRE** — during an incident, needs to reconstruct the chronological sequence of actions that touched a given resource.
 - **Security analyst** — needs to walk a large result set (potentially tens of thousands of events) without losing or duplicating events even while new events are still being written.
 
-This feature introduces a single read-only HTTP endpoint that lets these roles query events by `actor`, `resource`, and time range, with cursor-based pagination.
+This feature introduces a single read-only HTTP endpoint that lets these roles query events by `actor`, `resource`, and time range, with cursor-based pagination. The `actor` filter accepts either a single actor id or a comma-separated list of up to 10 actor ids, so that a compliance officer can confirm or refute an action attributable to any one of several principals (e.g. a user and a service account they impersonated) in a single request, and so that a security analyst can walk the union of events for a small cohort of suspects without N round trips.
 
 It also requires a change to the persisted event shape. The current schema stores `id` as a numeric DB identity and `actor`/`resource` as opaque flat strings. The query response contract requires:
 
@@ -21,12 +21,12 @@ These fields cannot be reliably reconstructed at the response boundary from the 
 
 ### Story 1 — Compliance officer: confirm or refute an action
 
-> *As a compliance officer, I want to query audit events by actor, resource, and time window, so that I can confirm or refute whether a specific action was performed during an audit.*
+> *As a compliance officer, I want to query audit events by one or more actors, a resource, and a time window, so that I can confirm or refute whether a specific action was performed during an audit — including audits that span a small group of related principals (e.g. a user plus the service accounts that acted on their behalf).*
 
 **Acceptance criteria (EARS):**
 
 - **AC1.1 — Ubiquitous.** The system shall expose `GET /api/v1/audit-events` returning a JSON page of events matching the provided filters.
-- **AC1.2 — Event-driven.** When the request includes `actor=<id>`, the system shall return only events whose `actor.id` equals `<id>`.
+- **AC1.2 — Event-driven.** When the request includes `actor=<id-list>`, where `<id-list>` is a comma-separated list of one or more actor ids, the system shall return only events whose `actor.id` is contained in `<id-list>` (set membership; a single id is the one-element case).
 - **AC1.3 — Event-driven.** When the request includes `resource=<id>`, the system shall return only events whose `resource.id` equals `<id>`.
 - **AC1.4 — Event-driven.** When the request includes `from=<ts>`, the system shall return only events with `timestamp >= <ts>`.
 - **AC1.5 — Event-driven.** When the request includes `to=<ts>`, the system shall return only events with `timestamp < <ts>` (half-open interval).
@@ -35,6 +35,9 @@ These fields cannot be reliably reconstructed at the response boundary from the 
 - **AC1.8 — Unwanted.** If `from` or `to` is not a valid RFC 3339 timestamp, then the system shall reject the request with HTTP 400 and not return any events.
 - **AC1.9 — Unwanted.** If `from` is provided and `to` is provided and `from >= to`, then the system shall reject the request with HTTP 422 (the timestamps parse correctly but the range is semantically invalid).
 - **AC1.10 — Ubiquitous.** The system shall not mutate any event as part of serving a query (read-only).
+- **AC1.11 — Ubiquitous.** When `actor=<id-list>` contains duplicate ids, the system shall deduplicate them before filter evaluation and before applying the cap in AC1.13; duplicates shall have no effect on which events are returned.
+- **AC1.12 — Unwanted.** If `actor` is provided with an empty value (`actor=`) or the comma-separated list contains an empty entry (e.g. `actor=a1,,a2` or a trailing comma `actor=a1,`), then the system shall reject the request with HTTP 400 and not return any events.
+- **AC1.13 — Unwanted.** If the deduplicated actor list (per AC1.11) contains more than 10 distinct ids, then the system shall reject the request with HTTP 422 and not return any events (the list parses as a syntactically valid set but exceeds the per-request cap).
 
 ### Story 2 — SRE: reconstruct the timeline of a resource during an incident
 
@@ -65,11 +68,14 @@ These fields cannot be reliably reconstructed at the response boundary from the 
 - **AC3.9a — Unwanted.** If `cursor` cannot be decoded as a valid cursor token, then the system shall reject the request with HTTP 400 and not return a partial page.
 - **AC3.9b — Unwanted.** If `cursor` decodes successfully but references a position the server cannot honor (e.g. encoded under an incompatible schema version), then the system shall reject the request with HTTP 422 and not return a partial page.
 - **AC3.10 — Event-driven.** When the same query is replayed page by page using each returned `next_cursor` until exhaustion, the union of returned events shall equal the set of stored events that matched the filters at the time the first page was served, with no duplicates and no omissions among events that existed at that time.
+- **AC3.11 — Ubiquitous.** For the purposes of the cursor-vs-filter match required by AC3.5, the `actor` filter shall be compared as the set of distinct ids encoded into the cursor (after the dedup in AC1.11); a replay request whose actor list contains the same set of ids in a different order, or with different multiplicity, shall not be rejected as a mismatch.
+- **AC3.12 — Event-driven.** When a multi-actor query is replayed page by page using each returned `next_cursor` until exhaustion, the union of returned events shall equal the set of stored events whose `actor.id` was in the deduplicated filter list (and which satisfied the other filters) at the time the first page was served, with no duplicates and no omissions among events that existed at that time; in particular, no event shall be returned twice merely because its `actor.id` matches more than one id in `<id-list>`.
 
 ## Out of scope
 
 - Authorization, authentication, and tenancy/scoping of who may call the endpoint — owned by a separate task.
 - Filtering by `action` or `outcome` (only `actor`, `resource`, `from`, `to` are supported in this iteration).
+- Multi-value (comma-separated) lists on any parameter other than `actor`. In particular `resource`, `from`, and `to` remain single-valued in this iteration; widening them is a separate decision.
 - Free-text search inside `context`.
 - Aggregations, counts, or statistics (e.g. total result size, group-by-actor).
 - Streaming or push delivery (websockets, SSE); only synchronous paginated reads.
