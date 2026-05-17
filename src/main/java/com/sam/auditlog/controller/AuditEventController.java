@@ -27,6 +27,9 @@ import com.sam.auditlog.service.QuerySpec;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.Explode;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 
@@ -81,24 +84,32 @@ public class AuditEventController {
         @ApiResponse(
                 responseCode = "400",
                 description =
-                        "Parse-tier failure: malformed timestamp, non-integer limit, or"
-                                + " cursor that is not valid base64url(JSON)."),
+                        "Parse-tier failure: malformed timestamp, non-integer limit, cursor that"
+                                + " is not valid base64url(JSON), or empty actor/resource value"
+                                + " (including empty entry or trailing comma in the actor list)."),
         @ApiResponse(
                 responseCode = "422",
                 description =
-                        "Semantic-tier failure: from >= to, limit outside [1, 200], blank"
-                                + " filter values, cursor whose filter hash does not match the"
-                                + " current request, or unsupported cursor schema version.")
+                        "Semantic-tier failure: from >= to, limit outside [1, 200], more than 10"
+                                + " distinct actor ids, cursor whose filter hash does not match"
+                                + " the current request, or unsupported cursor schema version.")
     })
     public ResponseEntity<AuditEventPage> query(
             @Parameter(
+                            name = "actor",
                             description =
-                                    "Filter by actor id. Comma-separated list of one or more"
-                                        + " distinct ids (set membership). Duplicates are silently"
-                                        + " dropped. Maximum 10 distinct ids per request.")
+                                    "One or more distinct actor ids, comma-separated. Duplicates"
+                                        + " are silently dropped. Maximum 10 distinct ids per"
+                                        + " request. Empty value, empty entry, or trailing comma"
+                                        + " -> 400. More than 10 distinct ids -> 422.",
+                            example = "u_42,svc_billing",
+                            explode = Explode.FALSE,
+                            array = @ArraySchema(schema = @Schema(type = "string")))
                     @RequestParam(required = false)
                     String actor,
-            @Parameter(description = "Filter by resource id (exact match).")
+            @Parameter(
+                            description =
+                                    "Filter by resource id (exact match). Empty value -> 400.")
                     @RequestParam(required = false)
                     String resource,
             @Parameter(description = "Inclusive lower bound on timestamp. RFC 3339 / ISO-8601.")
