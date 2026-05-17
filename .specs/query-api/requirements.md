@@ -54,7 +54,7 @@ These fields cannot be reliably reconstructed at the response boundary from the 
 **Acceptance criteria (EARS):**
 
 - **AC3.1 — Ubiquitous.** The system shall support cursor-based pagination via a `cursor` query parameter and a `next_cursor` field in the response.
-- **AC3.2 — Ubiquitous.** The cursor shall be opaque: clients shall not be required or expected to interpret its contents. The system makes no guarantees about the cursor's internal format and may evolve it across releases (signaled by the schema version `v`); the only supported client behavior is to pass a previously returned `next_cursor` back to the system unchanged.
+- **AC3.2 — Ubiquitous.** The system shall accept any `next_cursor` value it previously emitted when submitted unchanged as the next request's `cursor` (subject to AC3.5/AC3.9b), and the cursor's internal byte layout shall remain an undocumented server-side detail that may evolve across releases (signaled by the embedded schema version `v`).
 - **AC3.3 — Event-driven.** When the request includes `cursor=<c>`, the system shall return the next page of events strictly after the position encoded by `<c>` under the same ordering as AC2.1.
 - **AC3.4 — Ubiquitous.** The system shall encode the cursor over the `(timestamp, id)` pair of the last returned event, so that pagination is stable under concurrent inserts: events newly written after a page was returned shall not appear on subsequent pages of the same walk, and no event already returned shall reappear.
 - **AC3.5 — Event-driven.** When the request includes `cursor`, the system shall require the request's filter set (`actor`, `resource`, `from`, `to`) to match the filter set encoded into the cursor's originating request; if they disagree — including the case where a filter is now absent that was present originally, or vice versa — the system shall reject the request with HTTP 422 (all parameters parse correctly but their combination is inconsistent).
@@ -79,9 +79,15 @@ These fields cannot be reliably reconstructed at the response boundary from the 
 - Caching (HTTP `ETag`, `If-Modified-Since`) of query responses.
 - Backfill strategy for the ULID and structured-actor/resource columns beyond stating that it must occur via Flyway and must not violate append-only on live data — the concrete migration approach belongs in `design.md`.
 
-## Open questions
+## Resolved questions
 
-1. **Backfill semantics for `actor.type` / `resource.type` on existing rows.** Existing events store `actor` and `resource` as flat strings with no enforced type convention. What `type` should be assigned to events written before this feature lands? Options: a sentinel like `"unknown"`, parse a prefix convention if one informally exists, or require producers to re-emit. Decision affects the migration in `design.md`.
-2. **Behavior when zero filters are supplied.** All filters are optional and may all be omitted, returning the full event stream paginated. Is there a hard upper bound (e.g. max pages walked, max wall time) we want to commit to in requirements, or is that purely a non-functional concern for `design.md`?
-3. **Time-zone handling on input.** Should the API accept `from`/`to` only in UTC (`Z`-suffixed RFC 3339), or also accept offset forms (e.g. `+02:00`) and normalize? The example uses `Z` only.
-4. **Response envelope shape.** The example shows a single event object. Should the page envelope be `{ "events": [...], "next_cursor": "..." }`, or a bare array plus a `Link` / cursor header? Affects clients but not storage; finalize before `design.md`.
+These items were open during the initial spec draft and have since been resolved. They are recorded here for traceability; each carries its resolution and a pointer to the file where the decision is justified.
+
+1. **Backfill semantics for `actor.type` / `resource.type` on existing rows.** Existing events store `actor` and `resource` as flat strings with no enforced type convention.
+   *Resolution.* Pre-migration rows are assigned the literal string `"unknown"` for both `actor.type` and `resource.type`. See `design.md` §2.3 (the "Open question resolution" note) for rationale.
+2. **Behavior when zero filters are supplied.** All filters are optional and may all be omitted; the endpoint then paginates the entire stream.
+   *Resolution.* No hard upper bound (max pages, max wall time) is committed at the requirements level — the same cursor walk applies. Any guard rail is a non-functional / operational concern, not part of this contract. See `design.md` §1.2 ("Query parameters", the "All four data filters may be omitted" rule).
+3. **Time-zone handling on input.** Should `from` / `to` accept only UTC `Z`-suffixed RFC 3339, or also numeric offsets?
+   *Resolution.* The API accepts any RFC 3339 timestamp with a time-zone designator (`Z` or numeric offset such as `+02:00`) and normalizes to UTC at parse time. AC1.4 / AC1.5 are unaffected because the comparison runs against the server-side UTC `timestamp` column. See `tasks.md` T6 ("`from`/`to` bound as `Instant` (RFC 3339, accepts offsets, normalized to UTC by `Instant`)").
+4. **Response envelope shape.** Bare array + cursor header, or wrapped object?
+   *Resolution.* The page envelope is `{ "events": [...], "next_cursor": "..." }`. See `design.md` §1.3 ("Success response") for the documented example and AC3.6 for the absent-on-final-page rule.
