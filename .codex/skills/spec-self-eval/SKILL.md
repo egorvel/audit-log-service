@@ -75,7 +75,7 @@ For each item in `.specs/_eval-checklist.md` (or, only if that file cannot be re
 - **WEAK** — partially satisfied or borderline. The reasoning must end with one sentence on what would lift it to PASS.
 - **FAIL** — clearly violated. The reasoning must quote the offending line and propose the smallest fix.
 
-The procedures in "Per-check procedures" below cover the eight items currently in the checklist; apply them whenever the checklist names one of those items. For any additional checklist item not covered, apply the same spirit: enumerate the relevant evidence, quote it, and judge.
+The procedures in "Per-check procedures" below cover the nine items currently in the checklist; apply them whenever the checklist names one of those items. For any additional checklist item not covered, apply the same spirit: enumerate the relevant evidence, quote it, and judge.
 
 ### 5. Compose the report
 
@@ -171,7 +171,7 @@ The row count and titles in the table mirror whatever the checklist actually con
 
 ## Per-check procedures
 
-The procedures below cover the eight items currently in `.specs/_eval-checklist.md`. If the checklist is reworded, match by intent.
+The procedures below cover the nine items currently in `.specs/_eval-checklist.md`. If the checklist is reworded, match by intent.
 
 ### Each AC is testable
 
@@ -213,6 +213,10 @@ Every AC should carry an EARS label and match the label's grammar:
 
 Group the ACs by class in the reasoning. An AC labeled Ubiquitous whose prose starts "When ..." is a label/grammar mismatch and counts toward FAIL for this check.
 
+### Open questions are resolved
+
+`requirements.md` should not carry a live `## Open questions` section once decisions have been made. The resolution itself lives in `design.md` or `tasks.md`; `requirements.md` then renames the section to `## Resolved questions` and inlines each resolution with a pointer to the file where the decision is justified (e.g. *"Resolution. … See `design.md` §2.3."*). A live `## Open questions` heading with one or more outstanding items is FAIL — quote the items and propose moving each resolution into `design.md`/`tasks.md`. A `## Resolved questions` section whose items lack an inlined resolution or a pointer is WEAK.
+
 ## Checklist (fallback)
 
 Use this list **only** if `.specs/_eval-checklist.md` cannot be read. Otherwise the in-tree file wins.
@@ -225,6 +229,7 @@ Use this list **only** if `.specs/_eval-checklist.md` cannot be read. Otherwise 
 6. No contradictions between `requirements.md`, `design.md`, and `tasks.md` (same fact, same answer everywhere).
 7. Cross-references resolve: every `§X.Y`, AC id, or "see Section ..." points to a real section that says what is claimed.
 8. Every AC is in EARS form (Ubiquitous / Event-driven / Unwanted / State-driven / Optional).
+9. Open questions are resolved in `design.md` / `tasks.md`; `requirements.md` renames `## Open questions` → `## Resolved questions` with each resolution inlined and a pointer to the file where the decision is justified.
 
 ## Anti-rubber-stamp rules
 
