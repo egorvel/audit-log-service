@@ -83,7 +83,8 @@ class AuditEventRepositoryQueryIT {
         seedSequential("actor_B", 2, from.plusSeconds(10));
 
         List<AuditEvent> page =
-                repository.findPage("actor_A", null, from, to, null, null, PageRequest.of(0, 10));
+                repository.findPage(
+                        List.of("actor_A"), null, from, to, null, null, PageRequest.of(0, 10));
 
         assertThat(page).hasSize(3);
         assertThat(page).allMatch(e -> "actor_A".equals(e.actorId()));
@@ -141,7 +142,8 @@ class AuditEventRepositoryQueryIT {
         insertWithExplicitId(idHigh, ts, "tieActor", "tieResource");
 
         List<AuditEvent> page =
-                repository.findPage("tieActor", null, from, to, null, null, PageRequest.of(0, 10));
+                repository.findPage(
+                        List.of("tieActor"), null, from, to, null, null, PageRequest.of(0, 10));
 
         assertThat(page).hasSize(2);
         assertThat(page.get(0).id().trim()).isEqualTo(idHigh);
@@ -156,13 +158,20 @@ class AuditEventRepositoryQueryIT {
         seedSequential(tag, 6, from);
 
         List<AuditEvent> firstPage =
-                repository.findPage(tag, null, from, to, null, null, PageRequest.of(0, 3));
+                repository.findPage(
+                        List.of(tag), null, from, to, null, null, PageRequest.of(0, 3));
         assertThat(firstPage).hasSize(3);
 
         AuditEvent last = firstPage.get(firstPage.size() - 1);
         List<AuditEvent> secondPage =
                 repository.findPage(
-                        tag, null, from, to, last.timestamp(), last.id(), PageRequest.of(0, 3));
+                        List.of(tag),
+                        null,
+                        from,
+                        to,
+                        last.timestamp(),
+                        last.id(),
+                        PageRequest.of(0, 3));
 
         assertThat(secondPage).hasSize(3);
         assertThat(secondPage.get(0).timestamp()).isBeforeOrEqualTo(last.timestamp());
@@ -181,7 +190,8 @@ class AuditEventRepositoryQueryIT {
 
         // Caller asks for limit+1 = 4. If exactly 4 came back, more rows exist.
         List<AuditEvent> rows =
-                repository.findPage(tag, null, from, to, null, null, PageRequest.of(0, 4));
+                repository.findPage(
+                        List.of(tag), null, from, to, null, null, PageRequest.of(0, 4));
 
         assertThat(rows).hasSize(4);
     }

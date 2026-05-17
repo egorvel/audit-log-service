@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.sam.auditlog.service.CursorDecodeException;
+import com.sam.auditlog.service.EmptyFilterException;
 import com.sam.auditlog.service.QueryValidationException;
 
 @RestControllerAdvice
@@ -50,6 +51,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleQueryValidation(QueryValidationException ex) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(envelope(HttpStatus.UNPROCESSABLE_ENTITY, "Validation failed", ex.errors()));
+    }
+
+    @ExceptionHandler(EmptyFilterException.class)
+    public ResponseEntity<Map<String, Object>> handleEmptyFilter(EmptyFilterException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(envelope(HttpStatus.BAD_REQUEST, "Empty filter value", ex.errors()));
     }
 
     private static Map<String, Object> envelope(
