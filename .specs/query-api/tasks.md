@@ -7,7 +7,7 @@ References use §-style markers from `requirements.md` (AC…) and `design.md` (
 ## Dependency graph
 
 ```
-T1 ── T2 ── T4 ── T5 ── T6 ── T7
+T1 ── T2 ── T4 ── T5 ── T6 ── T7 ── T8 ── T9
         │         │
         └── T3 ───┘
 ```
@@ -19,9 +19,16 @@ T1 ── T2 ── T4 ── T5 ── T6 ── T7
 - **T5** `AuditEventQueryService` (orchestration + semantic validation)
 - **T6** `GET /api/v1/audit-events` controller wiring + end-to-end coverage
 - **T7** OpenAPI / springdoc annotations
+- **T8** Multi-actor filter: extend read path to a 1–10-id actor set (atomic across codec, service, repo, controller, exceptions, IT)
+- **T9** OpenAPI updates for the multi-actor parameter
 
 T2 and T3 are independent and can land in either order; everything from T4
-onward depends on T2; T5 depends on both T3 and T4.
+onward depends on T2; T5 depends on both T3 and T4. T8 builds on the shipped
+T1–T7 baseline (single-actor) and lands the multi-actor extension in one
+commit (signature changes to `CursorCodec.filterHash`, `QuerySpec.actor`, the
+repository `findPage` parameter, and the controller binding ripple together,
+so splitting them would produce intermediate commits that don't compile). T9
+follows T8 the same way T7 followed T6.
 
 ---
 
@@ -327,3 +334,81 @@ the convention already exists in the controller.
 - No behavior change; existing tests still pass.
 
 **Out of scope.** Anything not visible in the OpenAPI document.
+
+---
+
+## T8 — Multi-actor filter: extend the read path to an actor set (atomic)
+
+**Goal.** Extend `GET /api/v1/audit-events` so `actor` accepts a comma-separated list of 1–10 distinct ids with set-membership semantics, dedup, the 10-id cap, cursor replay that is order- and multiplicity-insensitive on the actor set, and a structural-vs-semantic split that reclassifies present-but-empty `actor`/`resource` from 422 to 400. The codec, service, repository, controller, and exception layer all change together because the type of the actor parameter ripples through all of them.
+
+**Refs.**
+- requirements AC1.2 (reformulated to set membership), AC1.11 (dedup), AC1.12 (400 on empty value / empty entry / trailing comma), AC1.13 (422 on >10 distinct ids), AC1.14 (400 on empty resource), AC3.11 (cursor `fh` match is set-based), AC3.12 (multi-actor walk: union, no dup, no loss; one event whose `actor.id` matches multiple ids in the list appears exactly once).
+- design §1.2 (param table), §1.4 (error table + structural-vs-semantic reframe), §3.3 (`fh` actor segment is sorted-deduped), §4 (`MergeAppend` over the existing `idx_events_actor_ts_id`, no new index), §5.2 (validation order: empty → range/limit → dedup → cap → cursor), §6.1 (controller binds `List<String>`), §6.2 (`QuerySpec.actor: Set<String>`, `CursorCodec` actor-segment construction), §6.3 (`:actors IS NULL OR e.actorId IN :actors`), §8 (multi-actor edge cases).
+
+**Scope.**
+
+*Cursor codec*
+- `service.CursorCodec.filterHash` signature changes from `(String actor, String resource, Instant from, Instant to)` to `(Set<String> actors, String resource, Instant from, Instant to)`. Inside, the actor segment is computed as `actors == null ? "" : String.join("", actors.stream().sorted().toList())` over the already-deduplicated set; the rest of the hash construction is unchanged. `null` and the empty set both mean "no actor filter" and must hash identically; the service is responsible for never passing an empty set (it passes `null` when the filter is absent), so the empty-set path is a defensive default, not a documented call site.
+
+*Exception layer*
+- `service.EmptyFilterException extends RuntimeException` — thrown for structural failures on filter values: `actor=` empty value, any empty/blank entry in the comma-separated list, trailing comma, or `resource=` empty/blank. Body carries field-level messages compatible with the existing envelope.
+- `controller.GlobalExceptionHandler` — add `@ExceptionHandler(EmptyFilterException.class)` → 400 with the existing envelope shape. Existing `QueryValidationException` → 422 handler unchanged.
+- `AuditEventQueryService.validate` (or its tier-1 helper) — move the actor/resource empty-string check out of the `QueryValidationException` (422) path and into `EmptyFilterException` (400). Existing tests asserting 422 for those cases are updated to 400 in the same commit (T6 IT + T5 unit).
+
+*`QuerySpec` and service*
+- `service.QuerySpec.actor` changes from `String` to `Set<String>` (nullable). The controller hands the raw `List<String>` to the service, which canonicalizes it once (empty-entry rejection → dedup) and stores the result as a `Set<String>` (or `null` when the filter is absent). Holding it as a set makes the dedup structurally permanent for every downstream consumer.
+- `AuditEventQueryService.query` / `validate` enforce the validation order pinned in design §5.2: (1) reject empty entries / empty values with `EmptyFilterException`; (2) range and limit checks (unchanged); (3) dedup actor list (no error); (4) if distinct count > 10, throw `QueryValidationException` per AC1.13; (5) cursor decode + version + `fh` check (the `fh` recomputation now passes the deduplicated `Set<String>` to `CursorCodec.filterHash`, automatically getting set-based comparison per AC3.11).
+- Existing `filterHash` call sites in `AuditEventQueryService` (currently passing `spec.actor()` as a `String`) update to pass the new `Set<String>` directly.
+
+*Repository*
+- `repository.AuditEventRepository.findPage` — rename `@Param("actor") String actor` to `@Param("actors") Collection<String> actors`; in the JPQL, `(:actor IS NULL OR e.actorId = :actor)` becomes `(:actors IS NULL OR e.actorId IN :actors)`. The `IS NULL` check on a collection parameter is supported by Hibernate when `null` is bound. Update the call site in `AuditEventQueryService` to pass `spec.actor()` (the `Set<String>` or `null`). The repository never sees an empty set: an empty `actor=` is rejected upstream by `EmptyFilterException` per §5.2 / §6.3.
+
+*Controller*
+- `controller.AuditEventController.query(...)` — change the `actor` parameter from `@RequestParam(required=false) String actor` to `@RequestParam(required=false) List<String> actor`. Spring's default comma-split applies (`?actor=a,b,c` → `["a","b","c"]`; `?actor=` → `[""]`; absence → `null`). The controller forwards the raw list to the service without normalizing — dedup, empty-entry detection, and the cap all live in the service (single owner of canonicalization, per design §6.1).
+
+*Tests (unit, no Spring context):*
+- `CursorCodecTest` — extend with: `filterHash` with a single-id set equals the previous `filterHash` with that single id as a String (call-out only if the prior test fixture is asserting against a known byte sequence — otherwise the new test is purely behavioral); `filterHash` is identical across `Set.of("a","b")`, `Set.of("b","a")`, and a dedup'd version of `["a","a","b"]`; `filterHash` differs by one bit when the set differs by one id; `null` and empty set hash to the same "no actor filter" segment.
+- `AuditEventQueryServiceTest` — extend with: AC1.11 dedup invariance on result set + on hash; AC1.13 cap (10 distinct → 200, 11 distinct → 422, 12 raw with 4 dups collapsing to 8 distinct → 200); AC1.12 empty value, empty entry, and trailing comma each throw `EmptyFilterException`; AC1.14 `resource=""` throws `EmptyFilterException` (this *changes* the existing 422 expectation); AC3.11 cursor replay accepted under reordered/dup'd actor list, rejected when the actor set differs by one id.
+
+*Tests (Testcontainers integration — extend `AuditEventQueryIntegrationTest`):*
+- **AC1.2 reformulated:** `actor=a1,a2` returns events whose `actor.id ∈ {a1,a2}`; assert the result equals the union of the two single-actor queries.
+- **AC1.11 dedup:** `actor=a1,a1,a2` and `actor=a1,a2` return byte-identical responses (including `next_cursor`).
+- **AC1.12 structural rejections:** `actor=`, `actor=a1,,a2`, `actor=a1,`, `actor=,a1` each return 400 with envelope; no partial page.
+- **AC1.13 cap:** 10 distinct ids → 200; 11 distinct ids → 422 with a message naming the cap; 12 raw with collisions collapsing to 8 distinct → 200.
+- **AC1.14 resource symmetry:** `resource=` → 400 with envelope (this replaces the existing 422 expectation in the same commit).
+- **AC3.11 cursor order-insensitivity:** mint a cursor with `actor=a1,a2`, replay with `actor=a2,a1` → 200; replay with `actor=a1,a2,a3` → 422; replay with `actor=a1` → 422.
+- **AC3.12 multi-actor walk:** seed N events across 3 actors `{a1, a2, a3}` plus a few rows whose `actor.id` is in two-of-three (only possible if seed semantics permit multiple actors per row — if not, just exercise that a single full walk via `next_cursor` over `actor=a1,a2,a3` returns the union with no duplicates and no losses; AC3.12's "appears exactly once" clause is then enforced by the JPQL's `IN`-based row identity at the DB layer and pinned by asserting `distinct(events.id).size() == events.size()` per page and across all pages).
+- **Index plan (smoke):** capture the `EXPLAIN` of one multi-actor query in test logs and grep for `Index Scan using idx_events_actor_ts_id` (one per actor) plus `Merge Append` (or `BitmapOr` on older planners) — a soft assertion via log inspection, matching the precedent in T4. If the planner picks a different shape, the test logs the plan and continues; this catches regressions to seq-scan without flaking on Postgres minor-version planner shifts.
+
+**DoD.**
+- `mvn verify` green, with both new IT scenarios and the migrated unit tests passing on Testcontainers Postgres.
+- Every new AC (1.11, 1.12, 1.13, 1.14, 3.11, 3.12) has at least one assertion in the unit or integration tests above that would fail if the corresponding behavior regressed; AC1.2 (reformulated) is covered by the existing single-actor tests *plus* the new multi-actor union test.
+- Existing tests that previously asserted 422 for empty `actor`/`resource` have been atomically updated to 400 and reference `EmptyFilterException`. No test references the old `filterHash(String, …)` signature.
+- `LayerBoundaryTest` and the rest of the ArchUnit suite still green; no new package added.
+- Manual curl smoke against a locally booted app, recorded in the PR description: `?actor=a,b` returns the expected union; `?actor=` returns 400; `?actor=` with 11 ids returns 422; a cursor minted under `actor=a,b` is honored when replayed as `actor=b,a` and rejected when replayed as `actor=a`.
+
+**Out of scope.**
+- OpenAPI annotations (T9).
+- Multi-value lists on `resource`, `from`, `to` (requirements.md "Out of scope").
+- Any change to the index set in design §4 — the existing `idx_events_actor_ts_id` is what the multi-actor plan rides on; T8 must not add or drop indexes. If profiling later shows the `MergeAppend` plan is hot enough to justify a different shape, that is a separate task with its own migration.
+
+---
+
+## T9 — OpenAPI / springdoc updates for the multi-actor parameter
+
+**Goal.** Reflect the new `actor` list semantics, the 10-id cap, and the empty-filter 400 reclassification in the generated `/v3/api-docs` and Swagger UI.
+
+**Refs.** design §1.2 (param table), §1.4 (error table); requirements AC1.2 (reformulated), AC1.11–14, AC3.11; T7 precedent (the `@Operation`/`@Parameter`/`@Schema` conventions already in place on the controller).
+
+**Scope.**
+- `@Parameter` on `actor` in `AuditEventController.query` — typed as array of strings (springdoc renders this as `style=form, explode=false` for the comma-separated form by default), description text covering: "one or more distinct actor ids; duplicates are silently dropped; maximum 10 distinct ids per request; empty value or empty entry rejected with 400; >10 distinct ids rejected with 422". Provide an example `u_42,svc_billing`.
+- `@Parameter` on `resource` — description updated to note that an empty value now returns 400 (was 422 in the T7 doc).
+- Operation response docs — under 400, add the bullet "`actor` empty value or empty entry in the comma-separated list; `resource` empty value"; under 422, add the bullet "`actor` list contains more than 10 distinct ids after dedup".
+- No `@Schema` changes on response components: `AuditEventResponse`, `ActorRef`, `ResourceRef`, `AuditEventPage`, `CreateAuditEventRequest` are all unaffected.
+
+**DoD.**
+- `GET /v3/api-docs` renders `actor` as an array-typed query parameter with the documented constraints and example; Swagger UI renders without warnings.
+- The documented 400 / 422 lists for the `GET` operation match design §1.4 exactly (no row in the design table is missing from the operation doc, and no doc row is missing from the table).
+- No behavior change; all T1–T8 tests still pass.
+
+**Out of scope.** Anything not visible in the generated OpenAPI document; any change to runtime validation behavior (that lives in T8).
