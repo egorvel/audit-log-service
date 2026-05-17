@@ -22,10 +22,10 @@ public interface AuditEventRepository extends JpaRepository<AuditEvent, String> 
      * <p>The {@code actors} parameter accepts a {@link Collection} of one or more distinct ids
      * (requirements §AC1.2 / §AC1.11). Passing {@code null} disables the actor filter; passing an
      * empty collection is the caller's mistake — the service rejects empty input upstream with
-     * {@link com.sam.auditlog.service.EmptyFilterException} so the JPQL never has to defend
-     * against the JPA "empty IN list" portability hazard. Postgres serves the {@code IN} list via
-     * a {@code MergeAppend} over per-actor scans against {@code idx_events_actor_ts_id} (design
-     * §4), so no extra index is needed.
+     * {@link com.sam.auditlog.service.EmptyFilterException} so the JPQL never has to defend against
+     * the JPA "empty IN list" portability hazard. Postgres serves the {@code IN} list via a {@code
+     * MergeAppend} over per-actor scans against {@code idx_events_actor_ts_id} (design §4), so no
+     * extra index is needed.
      *
      * <p>The caller passes a {@code Pageable.ofSize(limit + 1)} so the service layer can detect
      * "more rows exist" without an extra count query.

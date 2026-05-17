@@ -100,16 +100,14 @@ public class AuditEventController {
                             description =
                                     "One or more distinct actor ids, comma-separated. Duplicates"
                                         + " are silently dropped. Maximum 10 distinct ids per"
-                                        + " request. Empty value, empty entry, or trailing comma"
-                                        + " -> 400. More than 10 distinct ids -> 422.",
+                                        + " request. Empty value, empty entry, or trailing comma ->"
+                                        + " 400. More than 10 distinct ids -> 422.",
                             example = "u_42,svc_billing",
                             explode = Explode.FALSE,
                             array = @ArraySchema(schema = @Schema(type = "string")))
                     @RequestParam(required = false)
                     String actor,
-            @Parameter(
-                            description =
-                                    "Filter by resource id (exact match). Empty value -> 400.")
+            @Parameter(description = "Filter by resource id (exact match). Empty value -> 400.")
                     @RequestParam(required = false)
                     String resource,
             @Parameter(description = "Inclusive lower bound on timestamp. RFC 3339 / ISO-8601.")
@@ -139,11 +137,6 @@ public class AuditEventController {
         return ResponseEntity.ok(
                 queryService.query(
                         new QuerySpec(
-                                canonicalActor,
-                                validatedResource,
-                                from,
-                                to,
-                                decoded,
-                                limit)));
+                                canonicalActor, validatedResource, from, to, decoded, limit)));
     }
 }
