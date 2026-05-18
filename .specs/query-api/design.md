@@ -161,7 +161,7 @@ The endpoint uses **keyset pagination** rather than offset/limit. Reasoning:
 
 - **Stability under concurrent inserts (§AC3.4, §AC3.10).** New events land at the *head* of a `timestamp DESC` ordering; a keyset predicate `(timestamp, id) < (cursor.ts, cursor.id)` is unaffected by them, so a walk started at `T0` continues to enumerate the snapshot it began with. Offset/limit would skip events: if 5 new events arrive between page 1 and page 2, page 2 starting at `OFFSET=50` would skip the 5 oldest events from page 1's snapshot.
 - **Cost.** Keyset is `O(limit)` per page given the indexes in §4; offset/`OFFSET=N` degrades to `O(N + limit)`.
-- **Cursor opacity (§AC3.2).** Encoding the keyset state in an opaque token lets the server change the encoding (e.g. add fields, change tiebreaker) without breaking clients.
+- **Cursor opacity.** The cursor's internal byte layout is an undocumented server-side detail and may evolve across releases — schema-version drift is signaled by the embedded `v` field (§3.3) and rejected per §AC3.9b. Encoding the keyset state in an opaque token lets the server change the encoding (e.g. add fields, change tiebreaker) without breaking clients; §AC3.2 then guarantees that any cursor the server has emitted can be replayed unchanged.
 
 ### 3.3 Cursor format
 
@@ -292,7 +292,7 @@ The existing layout (AGENTS.md §Layout, enforced by `LayerBoundaryTest`) is pre
       """)
   List<AuditEvent> findPage(...,  Pageable pageable);
   ```
-  `Pageable` carries `limit + 1` (see §3.4). `:actors` is bound as `Collection<String>` from the deduplicated `QuerySpec.actor`; the service passes `null` to disable the filter and a non-empty `Set<String>` otherwise. Hibernate expands `IN :actors` to `IN (?, ?, …)` with one bind per id, so the query planner has full visibility into the list size and can pick the `MergeAppend` over `idx_events_actor_ts_id` described in §4. The list is never empty here: an empty `actor=` value is rejected upstream by `EmptyFilterException` (§5.2) before the repository is reached, so the JPQL never has to defend against the JPA "empty IN list" portability hazard.
+  `Pageable` carries `limit + 1` (see §3.4). `:actors` is bound as `Collection<String>` from the deduplicated `QuerySpec.actor`; the service passes `null` to disable the filter and a non-empty `Set<String>` otherwise. Hibernate expands `IN :actors` to `IN (?, ?, …)` with one bind per id, so the query planner has full visibility into the list size and can pick the `MergeAppend` over `idx_events_actor_ts_id` described in §4. The list is never empty here: an empty `actor=` value is rejected upstream by `EmptyFilterException` (§5.2) before the repository is reached, so the JPQL never has to defend against the JPA "empty IN list" portability hazard. Because `actor_id` is a single column per row and `:actors` is deduplicated upstream (§AC1.11), each row matches at most one element of the `IN` predicate — no `DISTINCT` is needed to satisfy the no-duplicates clause of §AC3.12.
 - `com/sam/auditlog/db/migration/V2__query_api_model.java` — the Flyway Java migration described in §2.3.
 - The least-privilege grant (`GRANT SELECT, INSERT`) is preserved on the new table, so the read path uses `SELECT` and never needs additional privileges.
 
