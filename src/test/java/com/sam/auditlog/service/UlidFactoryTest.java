@@ -1,7 +1,5 @@
 package com.sam.auditlog.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,6 +7,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import com.github.f4b6a3.ulid.Ulid;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** Pure unit test - no Spring context. */
 class UlidFactoryTest {

@@ -38,10 +38,9 @@ public class CursorCodec {
     private final ObjectMapper mapper;
 
     public CursorCodec() {
-        this.mapper =
-                new ObjectMapper()
-                        .registerModule(new JavaTimeModule())
-                        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        this.mapper = new ObjectMapper()
+                .registerModule(new JavaTimeModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
     public String encode(Cursor cursor) {
@@ -73,8 +72,7 @@ public class CursorCodec {
             throw new CursorDecodeException("cursor: missing required field");
         }
         if (cursor.v() != CURRENT_VERSION) {
-            throw new QueryValidationException(
-                    "cursor: unsupported schema version v=" + cursor.v());
+            throw new QueryValidationException("cursor: unsupported schema version v=" + cursor.v());
         }
         return cursor;
     }
@@ -93,18 +91,15 @@ public class CursorCodec {
      * default, not a documented call site.
      */
     public String filterHash(Set<String> actors, String resource, Instant from, Instant to) {
-        String joined =
-                actorSegment(actors)
-                        + UNIT_SEPARATOR
-                        + nullSafe(resource)
-                        + UNIT_SEPARATOR
-                        + (from == null ? "" : from.toString())
-                        + UNIT_SEPARATOR
-                        + (to == null ? "" : to.toString());
+        String joined = actorSegment(actors)
+                + UNIT_SEPARATOR
+                + nullSafe(resource)
+                + UNIT_SEPARATOR
+                + (from == null ? "" : from.toString())
+                + UNIT_SEPARATOR
+                + (to == null ? "" : to.toString());
         try {
-            byte[] hash =
-                    MessageDigest.getInstance("SHA-256")
-                            .digest(joined.getBytes(StandardCharsets.UTF_8));
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(joined.getBytes(StandardCharsets.UTF_8));
             return "sha256:" + HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);

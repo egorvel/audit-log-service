@@ -39,9 +39,7 @@ public class AuditEventQueryService {
     private final CursorCodec cursorCodec;
 
     public AuditEventQueryService(
-            AuditEventRepository repository,
-            AuditEventConverter converter,
-            CursorCodec cursorCodec) {
+            AuditEventRepository repository, AuditEventConverter converter, CursorCodec cursorCodec) {
         this.repository = repository;
         this.converter = converter;
         this.cursorCodec = cursorCodec;
@@ -52,33 +50,27 @@ public class AuditEventQueryService {
         validate(spec, limit);
 
         var cursor = spec.cursor();
-        var rows =
-                repository.findPage(
-                        spec.actor(),
-                        spec.resource(),
-                        spec.from(),
-                        spec.to(),
-                        cursor == null ? null : cursor.ts(),
-                        cursor == null ? null : cursor.id(),
-                        PageRequest.ofSize(limit + 1));
+        var rows = repository.findPage(
+                spec.actor(),
+                spec.resource(),
+                spec.from(),
+                spec.to(),
+                cursor == null ? null : cursor.ts(),
+                cursor == null ? null : cursor.id(),
+                PageRequest.ofSize(limit + 1));
 
         boolean hasMore = rows.size() > limit;
         List<AuditEvent> pageRows = hasMore ? rows.subList(0, limit) : rows;
 
-        List<AuditEventResponse> events = pageRows.stream().map(converter::toResponse).toList();
+        List<AuditEventResponse> events =
+                pageRows.stream().map(converter::toResponse).toList();
 
         String nextCursor = null;
         if (hasMore) {
             AuditEvent boundary = pageRows.get(pageRows.size() - 1);
-            String fh =
-                    cursorCodec.filterHash(spec.actor(), spec.resource(), spec.from(), spec.to());
-            nextCursor =
-                    cursorCodec.encode(
-                            new Cursor(
-                                    CursorCodec.CURRENT_VERSION,
-                                    boundary.timestamp(),
-                                    boundary.id(),
-                                    fh));
+            String fh = cursorCodec.filterHash(spec.actor(), spec.resource(), spec.from(), spec.to());
+            nextCursor = cursorCodec.encode(
+                    new Cursor(CursorCodec.CURRENT_VERSION, boundary.timestamp(), boundary.id(), fh));
         }
         return new AuditEventPage(events, nextCursor);
     }
@@ -92,18 +84,17 @@ public class AuditEventQueryService {
             errors.add("limit: must be between " + MIN_LIMIT + " and " + MAX_LIMIT);
         }
         if (spec.actor() != null && spec.actor().size() > MAX_DISTINCT_ACTORS) {
-            errors.add(
-                    "actor: at most "
-                            + MAX_DISTINCT_ACTORS
-                            + " distinct ids per request, got "
-                            + spec.actor().size());
+            errors.add("actor: at most "
+                    + MAX_DISTINCT_ACTORS
+                    + " distinct ids per request, got "
+                    + spec.actor().size());
         }
         if (spec.cursor() != null) {
             if (spec.cursor().v() != CursorCodec.CURRENT_VERSION) {
-                errors.add("cursor: unsupported schema version v=" + spec.cursor().v());
+                errors.add(
+                        "cursor: unsupported schema version v=" + spec.cursor().v());
             }
-            String currentFh =
-                    cursorCodec.filterHash(spec.actor(), spec.resource(), spec.from(), spec.to());
+            String currentFh = cursorCodec.filterHash(spec.actor(), spec.resource(), spec.from(), spec.to());
             if (!currentFh.equals(spec.cursor().fh())) {
                 errors.add("cursor: does not match the current filter set");
             }

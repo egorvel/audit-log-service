@@ -30,9 +30,7 @@ public interface AuditEventRepository extends JpaRepository<AuditEvent, String> 
      * <p>The caller passes a {@code Pageable.ofSize(limit + 1)} so the service layer can detect
      * "more rows exist" without an extra count query.
      */
-    @Query(
-            value =
-                    """
+    @Query(value = """
 SELECT e FROM AuditEvent e
  WHERE (:actors                  IS NULL OR e.actorId IN :actors)
    AND (cast(:resource as string)  IS NULL OR e.resourceId = :resource)

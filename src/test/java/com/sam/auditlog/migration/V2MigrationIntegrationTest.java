@@ -1,8 +1,5 @@
 package com.sam.auditlog.migration;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -25,6 +22,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import com.github.f4b6a3.ulid.Ulid;
 import com.github.f4b6a3.ulid.UlidCreator;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 /**
  * Verifies V2's table-replacement migration. Each test starts from a clean Flyway baseline so the
  * Postgres container can be shared across tests without state leakage.
@@ -33,11 +33,10 @@ import com.github.f4b6a3.ulid.UlidCreator;
 class V2MigrationIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:18.3-alpine")
-                    .withDatabaseName("auditlog")
-                    .withUsername("test")
-                    .withPassword("test");
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18.3-alpine")
+            .withDatabaseName("auditlog")
+            .withUsername("test")
+            .withPassword("test");
 
     @BeforeAll
     static void start() {
@@ -64,11 +63,9 @@ class V2MigrationIntegrationTest {
             assertThat(rowCount(conn)).isEqualTo(seeded.size());
 
             try (Statement s = conn.createStatement();
-                    ResultSet rs =
-                            s.executeQuery(
-                                    "SELECT id, timestamp, actor_id, actor_type, resource_id,"
-                                            + " resource_type FROM audit_events ORDER BY id"
-                                            + " ASC")) {
+                    ResultSet rs = s.executeQuery("SELECT id, timestamp, actor_id, actor_type, resource_id,"
+                            + " resource_type FROM audit_events ORDER BY id"
+                            + " ASC")) {
                 int idx = 0;
                 Instant prev = null;
                 while (rs.next()) {
@@ -85,16 +82,17 @@ class V2MigrationIntegrationTest {
 
                     assertThat(rs.getString("actor_type")).isEqualTo("unknown");
                     assertThat(rs.getString("resource_type")).isEqualTo("unknown");
-                    assertThat(rs.getString("actor_id")).isEqualTo(seeded.get(idx).actor());
-                    assertThat(rs.getString("resource_id")).isEqualTo(seeded.get(idx).resource());
+                    assertThat(rs.getString("actor_id"))
+                            .isEqualTo(seeded.get(idx).actor());
+                    assertThat(rs.getString("resource_id"))
+                            .isEqualTo(seeded.get(idx).resource());
                     idx++;
                 }
                 assertThat(idx).isEqualTo(seeded.size());
             }
 
             assertTriggersBlockMutation(conn);
-            assertThat(indexNames(conn))
-                    .contains("idx_events_ts_id", "idx_events_actor_ts_id", "idx_events_res_ts_id");
+            assertThat(indexNames(conn)).contains("idx_events_ts_id", "idx_events_actor_ts_id", "idx_events_res_ts_id");
         }
     }
 
@@ -106,28 +104,21 @@ class V2MigrationIntegrationTest {
 
         try (Connection conn = openConnection()) {
             assertThat(rowCount(conn)).isZero();
-            assertThat(indexNames(conn))
-                    .contains("idx_events_ts_id", "idx_events_actor_ts_id", "idx_events_res_ts_id");
+            assertThat(indexNames(conn)).contains("idx_events_ts_id", "idx_events_actor_ts_id", "idx_events_res_ts_id");
             assertTriggersBlockMutation(conn);
         }
     }
 
     private static Connection openConnection() throws SQLException {
-        return DriverManager.getConnection(
-                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+        return DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
     }
 
     /** {@code target == null} means "all migrations". */
     private static Flyway flyway(String target) {
-        var cfg =
-                Flyway.configure()
-                        .dataSource(
-                                POSTGRES.getJdbcUrl(),
-                                POSTGRES.getUsername(),
-                                POSTGRES.getPassword())
-                        .locations(
-                                "classpath:db/migration", "classpath:com/sam/auditlog/db/migration")
-                        .cleanDisabled(false);
+        var cfg = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .locations("classpath:db/migration", "classpath:com/sam/auditlog/db/migration")
+                .cleanDisabled(false);
         if (target != null) {
             cfg = cfg.target(target);
         }
@@ -138,9 +129,8 @@ class V2MigrationIntegrationTest {
         List<SeedRow> rows = new ArrayList<>();
         Instant base = Instant.parse("2026-01-01T00:00:00Z");
         try (PreparedStatement ps =
-                conn.prepareStatement(
-                        "INSERT INTO audit_events (timestamp, actor, action, resource, outcome,"
-                                + " context) VALUES (?, ?, ?, ?, ?, ?::jsonb)")) {
+                conn.prepareStatement("INSERT INTO audit_events (timestamp, actor, action, resource, outcome,"
+                        + " context) VALUES (?, ?, ?, ?, ?, ?::jsonb)")) {
             for (int i = 0; i < 10; i++) {
                 Instant ts = base.plusSeconds(i);
                 String actor = "actor_" + i;
@@ -169,9 +159,7 @@ class V2MigrationIntegrationTest {
     private static List<String> indexNames(Connection conn) throws SQLException {
         try (Statement s = conn.createStatement();
                 ResultSet rs =
-                        s.executeQuery(
-                                "SELECT indexname FROM pg_indexes WHERE tablename ="
-                                        + " 'audit_events'")) {
+                        s.executeQuery("SELECT indexname FROM pg_indexes WHERE tablename =" + " 'audit_events'")) {
             List<String> names = new ArrayList<>();
             while (rs.next()) {
                 names.add(rs.getString(1));
@@ -183,9 +171,8 @@ class V2MigrationIntegrationTest {
     private static void assertTriggersBlockMutation(Connection conn) throws SQLException {
         String ulid = UlidCreator.getMonotonicUlid().toString();
         try (PreparedStatement ps =
-                conn.prepareStatement(
-                        "INSERT INTO audit_events (id, actor_id, actor_type, action, resource_id,"
-                                + " resource_type, outcome) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+                conn.prepareStatement("INSERT INTO audit_events (id, actor_id, actor_type, action, resource_id,"
+                        + " resource_type, outcome) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, ulid);
             ps.setString(2, "actor");
             ps.setString(3, "user");
@@ -196,31 +183,25 @@ class V2MigrationIntegrationTest {
             ps.executeUpdate();
         }
 
-        assertThatThrownBy(
-                        () -> {
-                            try (Statement s = conn.createStatement()) {
-                                s.executeUpdate(
-                                        "UPDATE audit_events SET actor_id = 'hacker' WHERE id = '"
-                                                + ulid
-                                                + "'");
-                            }
-                        })
+        assertThatThrownBy(() -> {
+                    try (Statement s = conn.createStatement()) {
+                        s.executeUpdate("UPDATE audit_events SET actor_id = 'hacker' WHERE id = '" + ulid + "'");
+                    }
+                })
                 .hasMessageContaining("append-only");
 
-        assertThatThrownBy(
-                        () -> {
-                            try (Statement s = conn.createStatement()) {
-                                s.executeUpdate("DELETE FROM audit_events");
-                            }
-                        })
+        assertThatThrownBy(() -> {
+                    try (Statement s = conn.createStatement()) {
+                        s.executeUpdate("DELETE FROM audit_events");
+                    }
+                })
                 .hasMessageContaining("append-only");
 
-        assertThatThrownBy(
-                        () -> {
-                            try (Statement s = conn.createStatement()) {
-                                s.execute("TRUNCATE audit_events");
-                            }
-                        })
+        assertThatThrownBy(() -> {
+                    try (Statement s = conn.createStatement()) {
+                        s.execute("TRUNCATE audit_events");
+                    }
+                })
                 .hasMessageContaining("append-only");
     }
 

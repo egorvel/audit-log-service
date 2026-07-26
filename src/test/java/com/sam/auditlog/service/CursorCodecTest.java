@@ -1,14 +1,14 @@
 package com.sam.auditlog.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Pure unit test - no Spring context. */
 class CursorCodecTest {
@@ -17,12 +17,8 @@ class CursorCodecTest {
 
     @Test
     void encode_decode_roundTripsAllFields() {
-        Cursor original =
-                new Cursor(
-                        1,
-                        Instant.parse("2026-04-25T10:00:00.123456Z"),
-                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
-                        "sha256:deadbeef");
+        Cursor original = new Cursor(
+                1, Instant.parse("2026-04-25T10:00:00.123456Z"), "01HE3XJ7N2K9V0R1B6T8Q4WMZ9", "sha256:deadbeef");
 
         Cursor decoded = codec.decode(codec.encode(original));
 
@@ -46,8 +42,7 @@ class CursorCodecTest {
 
     @Test
     void decode_validBase64_butNotJson_throwsCursorDecodeException() {
-        String token =
-                Base64.getUrlEncoder().withoutPadding().encodeToString("not json".getBytes());
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString("not json".getBytes());
 
         assertThatThrownBy(() -> codec.decode(token))
                 .isInstanceOf(CursorDecodeException.class)
@@ -57,10 +52,9 @@ class CursorCodecTest {
     @Test
     void decode_missingRequiredField_throwsCursorDecodeException() {
         // No "ts" field.
-        String token =
-                Base64.getUrlEncoder()
-                        .withoutPadding()
-                        .encodeToString("{\"v\":1,\"id\":\"abc\",\"fh\":\"sha256:x\"}".getBytes());
+        String token = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString("{\"v\":1,\"id\":\"abc\",\"fh\":\"sha256:x\"}".getBytes());
 
         assertThatThrownBy(() -> codec.decode(token))
                 .isInstanceOf(CursorDecodeException.class)
@@ -70,12 +64,7 @@ class CursorCodecTest {
     @Test
     void decode_unknownVersion_throwsQueryValidationException() {
         // v=2 is not the current schema version.
-        Cursor wrong =
-                new Cursor(
-                        2,
-                        Instant.parse("2026-04-25T10:00:00Z"),
-                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
-                        "sha256:x");
+        Cursor wrong = new Cursor(2, Instant.parse("2026-04-25T10:00:00Z"), "01HE3XJ7N2K9V0R1B6T8Q4WMZ9", "sha256:x");
         String token = codec.encode(wrong);
 
         assertThatThrownBy(() -> codec.decode(token))
