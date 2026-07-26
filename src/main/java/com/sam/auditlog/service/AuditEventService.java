@@ -14,10 +14,7 @@ public class AuditEventService {
     private final AuditEventConverter converter;
     private final UlidFactory ulidFactory;
 
-    public AuditEventService(
-            AuditEventRepository repository,
-            AuditEventConverter converter,
-            UlidFactory ulidFactory) {
+    public AuditEventService(AuditEventRepository repository, AuditEventConverter converter, UlidFactory ulidFactory) {
         this.repository = repository;
         this.converter = converter;
         this.ulidFactory = ulidFactory;

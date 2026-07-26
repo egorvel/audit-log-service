@@ -1,11 +1,11 @@
 package com.sam.auditlog.architecture;
 
-import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
-
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+
+import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
 /**
  * Enforces the package-layer boundaries documented in AGENTS.md.
@@ -20,51 +20,49 @@ import com.tngtech.archunit.lang.ArchRule;
 class LayerBoundaryTest {
 
     @ArchTest
-    static final ArchRule layered_architecture_is_respected =
-            layeredArchitecture()
-                    .consideringAllDependencies()
-                    .layer("Controller")
-                    .definedBy("com.sam.auditlog.controller..")
-                    .layer("Service")
-                    .definedBy("com.sam.auditlog.service..")
-                    .layer("Repository")
-                    .definedBy("com.sam.auditlog.repository..")
-                    .layer("Converter")
-                    .definedBy("com.sam.auditlog.converter..")
-                    .layer("Dto")
-                    .definedBy("com.sam.auditlog.dto..")
-                    .layer("Model")
-                    .definedBy("com.sam.auditlog.model..")
-                    // Config is reserved in AGENTS.md for Spring @Configuration classes;
-                    // it can legitimately be empty until one is added, so allow that.
-                    .optionalLayer("Config")
-                    .definedBy("com.sam.auditlog.config..")
+    static final ArchRule layered_architecture_is_respected = layeredArchitecture()
+            .consideringAllDependencies()
+            .layer("Controller")
+            .definedBy("com.sam.auditlog.controller..")
+            .layer("Service")
+            .definedBy("com.sam.auditlog.service..")
+            .layer("Repository")
+            .definedBy("com.sam.auditlog.repository..")
+            .layer("Converter")
+            .definedBy("com.sam.auditlog.converter..")
+            .layer("Dto")
+            .definedBy("com.sam.auditlog.dto..")
+            .layer("Model")
+            .definedBy("com.sam.auditlog.model..")
+            // Config is reserved in AGENTS.md for Spring @Configuration classes;
+            // it can legitimately be empty until one is added, so allow that.
+            .optionalLayer("Config")
+            .definedBy("com.sam.auditlog.config..")
 
-                    // Top of the stack: nothing else may depend on the HTTP layer.
-                    .whereLayer("Controller")
-                    .mayNotBeAccessedByAnyLayer()
+            // Top of the stack: nothing else may depend on the HTTP layer.
+            .whereLayer("Controller")
+            .mayNotBeAccessedByAnyLayer()
 
-                    // Service is reached only from controllers.
-                    .whereLayer("Service")
-                    .mayOnlyBeAccessedByLayers("Controller")
+            // Service is reached only from controllers.
+            .whereLayer("Service")
+            .mayOnlyBeAccessedByLayers("Controller")
 
-                    // Repositories are an implementation detail of the service layer.
-                    .whereLayer("Repository")
-                    .mayOnlyBeAccessedByLayers("Service")
+            // Repositories are an implementation detail of the service layer.
+            .whereLayer("Repository")
+            .mayOnlyBeAccessedByLayers("Service")
 
-                    // Converters translate between DTOs and entities; only callers of
-                    // those translations should depend on them.
-                    .whereLayer("Converter")
-                    .mayOnlyBeAccessedByLayers("Controller", "Service")
+            // Converters translate between DTOs and entities; only callers of
+            // those translations should depend on them.
+            .whereLayer("Converter")
+            .mayOnlyBeAccessedByLayers("Controller", "Service")
 
-                    // DTOs are part of the API surface; converters and the layers that
-                    // hand them across the wire may use them.
-                    .whereLayer("Dto")
-                    .mayOnlyBeAccessedByLayers("Controller", "Service", "Converter")
+            // DTOs are part of the API surface; converters and the layers that
+            // hand them across the wire may use them.
+            .whereLayer("Dto")
+            .mayOnlyBeAccessedByLayers("Controller", "Service", "Converter")
 
-                    // Model is the domain core; everything above it may depend on it,
-                    // but it does not depend on anything else inside the project.
-                    .whereLayer("Model")
-                    .mayOnlyBeAccessedByLayers(
-                            "Controller", "Service", "Repository", "Converter", "Dto");
+            // Model is the domain core; everything above it may depend on it,
+            // but it does not depend on anything else inside the project.
+            .whereLayer("Model")
+            .mayOnlyBeAccessedByLayers("Controller", "Service", "Repository", "Converter", "Dto");
 }

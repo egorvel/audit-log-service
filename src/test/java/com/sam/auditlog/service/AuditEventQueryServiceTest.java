@@ -1,12 +1,5 @@
 package com.sam.auditlog.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -28,6 +21,13 @@ import com.sam.auditlog.model.AuditEvent;
 import com.sam.auditlog.model.Outcome;
 import com.sam.auditlog.repository.AuditEventRepository;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 /**
  * Unit test for the query service. Repository is mocked; {@link CursorCodec} and {@link
  * AuditEventConverter} are real (both are pure helpers with no DI).
@@ -35,7 +35,8 @@ import com.sam.auditlog.repository.AuditEventRepository;
 @ExtendWith(MockitoExtension.class)
 class AuditEventQueryServiceTest {
 
-    @Mock AuditEventRepository repository;
+    @Mock
+    AuditEventRepository repository;
 
     private final CursorCodec codec = new CursorCodec();
     private final AuditEventConverter converter = new AuditEventConverter();
@@ -121,10 +122,7 @@ class AuditEventQueryServiceTest {
         // The 10-distinct cap is a downstream concern of validate(); canonicalize never throws on
         // size, so an 11-distinct list returns an 11-element set and the cap is enforced later.
         Set<String> result =
-                service.canonicalizeActor(
-                        List.of(
-                                "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10",
-                                "a11"));
+                service.canonicalizeActor(List.of("a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11"));
         assertThat(result).hasSize(11);
     }
 
@@ -134,8 +132,7 @@ class AuditEventQueryServiceTest {
         assertThatThrownBy(() -> service.requireNonBlankResource(""))
                 .isInstanceOf(EmptyFilterException.class)
                 .hasMessageContaining("resource");
-        assertThatThrownBy(() -> service.requireNonBlankResource("   "))
-                .isInstanceOf(EmptyFilterException.class);
+        assertThatThrownBy(() -> service.requireNonBlankResource("   ")).isInstanceOf(EmptyFilterException.class);
     }
 
     @Test
@@ -147,8 +144,7 @@ class AuditEventQueryServiceTest {
     @Test
     void query_actorSetOver10_throws422() {
         // AC1.13: more than 10 distinct ids after dedup → 422.
-        Set<String> eleven =
-                Set.of("a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11");
+        Set<String> eleven = Set.of("a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11");
         QuerySpec spec = new QuerySpec(eleven, null, null, null, null, 10);
 
         assertThatThrownBy(() -> service.query(spec))
@@ -160,12 +156,11 @@ class AuditEventQueryServiceTest {
     void query_cursorFhMismatch_throws422() {
         // Cursor was encoded with filter actor={alice}; current request has actor={bob} ->
         // mismatch.
-        Cursor encodedWithAlice =
-                new Cursor(
-                        CursorCodec.CURRENT_VERSION,
-                        t0.plusSeconds(5),
-                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
-                        codec.filterHash(Set.of("alice"), null, null, null));
+        Cursor encodedWithAlice = new Cursor(
+                CursorCodec.CURRENT_VERSION,
+                t0.plusSeconds(5),
+                "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
+                codec.filterHash(Set.of("alice"), null, null, null));
         QuerySpec spec = new QuerySpec(Set.of("bob"), null, null, null, encodedWithAlice, 10);
 
         assertThatThrownBy(() -> service.query(spec))
@@ -179,12 +174,11 @@ class AuditEventQueryServiceTest {
         when(repository.findPage(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(List.of());
 
-        Cursor mintedWithAB =
-                new Cursor(
-                        CursorCodec.CURRENT_VERSION,
-                        t0.plusSeconds(5),
-                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
-                        codec.filterHash(Set.of("a", "b"), null, null, null));
+        Cursor mintedWithAB = new Cursor(
+                CursorCodec.CURRENT_VERSION,
+                t0.plusSeconds(5),
+                "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
+                codec.filterHash(Set.of("a", "b"), null, null, null));
         Set<String> reordered = new LinkedHashSet<>();
         reordered.add("b");
         reordered.add("a");
@@ -198,12 +192,11 @@ class AuditEventQueryServiceTest {
     @Test
     void query_cursorFhMismatchOnDifferentActorSet() {
         // AC3.11 negative case: a one-id difference in the set → 422.
-        Cursor mintedWithAB =
-                new Cursor(
-                        CursorCodec.CURRENT_VERSION,
-                        t0.plusSeconds(5),
-                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
-                        codec.filterHash(Set.of("a", "b"), null, null, null));
+        Cursor mintedWithAB = new Cursor(
+                CursorCodec.CURRENT_VERSION,
+                t0.plusSeconds(5),
+                "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
+                codec.filterHash(Set.of("a", "b"), null, null, null));
         QuerySpec spec = new QuerySpec(Set.of("a"), null, null, null, mintedWithAB, 10);
 
         assertThatThrownBy(() -> service.query(spec))
@@ -229,10 +222,10 @@ class AuditEventQueryServiceTest {
     void query_repoReturnsLimitPlusOne_buildsCursorFromLimitthRow() {
         int limit = 3;
         List<AuditEvent> rows = seedEvents(limit + 1);
-        when(repository.findPage(any(), any(), any(), any(), any(), any(), any())).thenReturn(rows);
+        when(repository.findPage(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(rows);
 
-        AuditEventPage page =
-                service.query(new QuerySpec(Set.of("a"), null, null, null, null, limit));
+        AuditEventPage page = service.query(new QuerySpec(Set.of("a"), null, null, null, null, limit));
 
         assertThat(page.events()).hasSize(limit);
         assertThat(page.nextCursor()).isNotNull();
@@ -251,14 +244,12 @@ class AuditEventQueryServiceTest {
                 .thenReturn(List.of());
 
         // Cursor must match the (null,null,null,null) filter set so semantic validation passes.
-        Cursor cursorWithMatchingFh =
-                new Cursor(
-                        CursorCodec.CURRENT_VERSION,
-                        t0.plusSeconds(10),
-                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
-                        codec.filterHash(null, null, null, null));
-        AuditEventPage page =
-                service.query(new QuerySpec(null, null, null, null, cursorWithMatchingFh, 10));
+        Cursor cursorWithMatchingFh = new Cursor(
+                CursorCodec.CURRENT_VERSION,
+                t0.plusSeconds(10),
+                "01HE3XJ7N2K9V0R1B6T8Q4WMZ9",
+                codec.filterHash(null, null, null, null));
+        AuditEventPage page = service.query(new QuerySpec(null, null, null, null, cursorWithMatchingFh, 10));
 
         assertThat(page.events()).isEmpty();
         assertThat(page.nextCursor()).isNull();
@@ -274,35 +265,24 @@ class AuditEventQueryServiceTest {
         service.query(new QuerySpec(null, null, null, null, null, null));
 
         ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
-        verify(repository)
-                .findPage(
-                        eq(null),
-                        eq(null),
-                        eq(null),
-                        eq(null),
-                        eq(null),
-                        eq(null),
-                        pageable.capture());
-        assertThat(pageable.getValue().getPageSize())
-                .isEqualTo(AuditEventQueryService.DEFAULT_LIMIT + 1);
+        verify(repository).findPage(eq(null), eq(null), eq(null), eq(null), eq(null), eq(null), pageable.capture());
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(AuditEventQueryService.DEFAULT_LIMIT + 1);
     }
 
     // ----- helpers -----
 
     private List<AuditEvent> seedEvents(int n) {
         return IntStream.range(0, n)
-                .mapToObj(
-                        i ->
-                                new AuditEvent(
-                                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ" + i,
-                                        t0.plusSeconds(i),
-                                        "actor",
-                                        "user",
-                                        "resource",
-                                        "project",
-                                        "act",
-                                        Outcome.SUCCESS,
-                                        Map.of()))
+                .mapToObj(i -> new AuditEvent(
+                        "01HE3XJ7N2K9V0R1B6T8Q4WMZ" + i,
+                        t0.plusSeconds(i),
+                        "actor",
+                        "user",
+                        "resource",
+                        "project",
+                        "act",
+                        Outcome.SUCCESS,
+                        Map.of()))
                 .toList();
     }
 }

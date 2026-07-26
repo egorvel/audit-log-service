@@ -36,8 +36,7 @@ public class V2__query_api_model extends BaseJavaMigration {
 
     private static void createNewTable(Connection conn) throws Exception {
         try (Statement stmt = conn.createStatement()) {
-            stmt.execute(
-                    """
+            stmt.execute("""
 CREATE TABLE audit_events_new (
     id            CHAR(26)    PRIMARY KEY,
     timestamp     TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -54,12 +53,10 @@ CREATE TABLE audit_events_new (
     }
 
     private static void backfillRows(Connection conn) throws Exception {
-        String selectSql =
-                "SELECT timestamp, actor, action, resource, outcome, context FROM audit_events";
-        String insertSql =
-                "INSERT INTO audit_events_new"
-                        + " (id, timestamp, actor_id, actor_type, resource_id, resource_type,"
-                        + " action, outcome, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)";
+        String selectSql = "SELECT timestamp, actor, action, resource, outcome, context FROM audit_events";
+        String insertSql = "INSERT INTO audit_events_new"
+                + " (id, timestamp, actor_id, actor_type, resource_id, resource_type,"
+                + " action, outcome, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)";
 
         try (PreparedStatement select = conn.prepareStatement(selectSql);
                 ResultSet rs = select.executeQuery();
@@ -102,26 +99,22 @@ CREATE TABLE audit_events_new (
         // The trigger function reject_audit_event_modification() was created in V1 and survives
         // the table drop, so we only need to recreate the triggers that bind it to the new table.
         try (Statement stmt = conn.createStatement()) {
-            stmt.execute(
-                    "CREATE TRIGGER audit_events_no_update"
-                            + " BEFORE UPDATE ON audit_events"
-                            + " FOR EACH ROW EXECUTE FUNCTION reject_audit_event_modification()");
-            stmt.execute(
-                    "CREATE TRIGGER audit_events_no_delete"
-                            + " BEFORE DELETE ON audit_events"
-                            + " FOR EACH ROW EXECUTE FUNCTION reject_audit_event_modification()");
-            stmt.execute(
-                    "CREATE TRIGGER audit_events_no_truncate"
-                            + " BEFORE TRUNCATE ON audit_events"
-                            + " FOR EACH STATEMENT EXECUTE FUNCTION"
-                            + " reject_audit_event_modification()");
+            stmt.execute("CREATE TRIGGER audit_events_no_update"
+                    + " BEFORE UPDATE ON audit_events"
+                    + " FOR EACH ROW EXECUTE FUNCTION reject_audit_event_modification()");
+            stmt.execute("CREATE TRIGGER audit_events_no_delete"
+                    + " BEFORE DELETE ON audit_events"
+                    + " FOR EACH ROW EXECUTE FUNCTION reject_audit_event_modification()");
+            stmt.execute("CREATE TRIGGER audit_events_no_truncate"
+                    + " BEFORE TRUNCATE ON audit_events"
+                    + " FOR EACH STATEMENT EXECUTE FUNCTION"
+                    + " reject_audit_event_modification()");
         }
     }
 
     private static void regrant(Connection conn) throws Exception {
         try (Statement stmt = conn.createStatement()) {
-            stmt.execute(
-                    """
+            stmt.execute("""
                     DO $$
                     BEGIN
                         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'audit_app') THEN
@@ -134,14 +127,11 @@ CREATE TABLE audit_events_new (
 
     private static void createIndexes(Connection conn) throws Exception {
         try (Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE INDEX idx_events_ts_id" + " ON audit_events (timestamp DESC, id DESC)");
             stmt.execute(
-                    "CREATE INDEX idx_events_ts_id" + " ON audit_events (timestamp DESC, id DESC)");
+                    "CREATE INDEX idx_events_actor_ts_id" + " ON audit_events (actor_id, timestamp DESC, id DESC)");
             stmt.execute(
-                    "CREATE INDEX idx_events_actor_ts_id"
-                            + " ON audit_events (actor_id, timestamp DESC, id DESC)");
-            stmt.execute(
-                    "CREATE INDEX idx_events_res_ts_id"
-                            + " ON audit_events (resource_id, timestamp DESC, id DESC)");
+                    "CREATE INDEX idx_events_res_ts_id" + " ON audit_events (resource_id, timestamp DESC, id DESC)");
         }
     }
 }

@@ -1,7 +1,5 @@
 package com.sam.auditlog.repository;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.time.Instant;
 import java.util.List;
 
@@ -19,6 +17,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import com.github.f4b6a3.ulid.UlidCreator;
 import com.sam.auditlog.model.AuditEvent;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * Integration test for the keyset-paginated repository method. The events table is append-only
  * (UPDATE/DELETE/TRUNCATE blocked by triggers), so test isolation is achieved by allocating each
@@ -31,11 +31,10 @@ import com.sam.auditlog.model.AuditEvent;
 class AuditEventRepositoryQueryIT {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:18.3-alpine")
-                    .withDatabaseName("auditlog")
-                    .withUsername("test")
-                    .withPassword("test");
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18.3-alpine")
+            .withDatabaseName("auditlog")
+            .withUsername("test")
+            .withPassword("test");
 
     static {
         POSTGRES.start();
@@ -51,8 +50,11 @@ class AuditEventRepositoryQueryIT {
         reg.add("spring.flyway.password", POSTGRES::getPassword);
     }
 
-    @Autowired AuditEventRepository repository;
-    @Autowired JdbcTemplate jdbc;
+    @Autowired
+    AuditEventRepository repository;
+
+    @Autowired
+    JdbcTemplate jdbc;
 
     /** Common anchor; each test offsets from it by a tag-derived amount. */
     private static final Instant ANCHOR = Instant.parse("2026-04-01T00:00:00Z");
@@ -67,8 +69,7 @@ class AuditEventRepositoryQueryIT {
         Instant to = from.plusSeconds(WINDOW_SECONDS);
         seedSequential(tag, 5, from);
 
-        List<AuditEvent> page =
-                repository.findPage(null, null, from, to, null, null, PageRequest.of(0, 10));
+        List<AuditEvent> page = repository.findPage(null, null, from, to, null, null, PageRequest.of(0, 10));
 
         assertThat(page).hasSize(5);
         assertOrderedDesc(page);
@@ -83,8 +84,7 @@ class AuditEventRepositoryQueryIT {
         seedSequential("actor_B", 2, from.plusSeconds(10));
 
         List<AuditEvent> page =
-                repository.findPage(
-                        List.of("actor_A"), null, from, to, null, null, PageRequest.of(0, 10));
+                repository.findPage(List.of("actor_A"), null, from, to, null, null, PageRequest.of(0, 10));
 
         assertThat(page).hasSize(3);
         assertThat(page).allMatch(e -> "actor_A".equals(e.actorId()));
@@ -98,8 +98,7 @@ class AuditEventRepositoryQueryIT {
         seedSequential(tag, 2, from, "actor_R", "res_X");
         seedSequential(tag, 4, from.plusSeconds(10), "actor_R", "res_Y");
 
-        List<AuditEvent> page =
-                repository.findPage(null, "res_X", from, to, null, null, PageRequest.of(0, 10));
+        List<AuditEvent> page = repository.findPage(null, "res_X", from, to, null, null, PageRequest.of(0, 10));
 
         assertThat(page).hasSize(2);
         assertThat(page).allMatch(e -> "res_X".equals(e.resourceId()));
@@ -114,15 +113,8 @@ class AuditEventRepositoryQueryIT {
         insertAt(base.plusSeconds(2), tag, tag);
         insertAt(base.plusSeconds(3), tag, tag);
 
-        List<AuditEvent> page =
-                repository.findPage(
-                        null,
-                        null,
-                        base.plusSeconds(2),
-                        base.plusSeconds(3),
-                        null,
-                        null,
-                        PageRequest.of(0, 10));
+        List<AuditEvent> page = repository.findPage(
+                null, null, base.plusSeconds(2), base.plusSeconds(3), null, null, PageRequest.of(0, 10));
 
         // Only the +2s row matches: +1s is below `from`, +3s is excluded by half-open `to`.
         assertThat(page).hasSize(1);
@@ -142,8 +134,7 @@ class AuditEventRepositoryQueryIT {
         insertWithExplicitId(idHigh, ts, "tieActor", "tieResource");
 
         List<AuditEvent> page =
-                repository.findPage(
-                        List.of("tieActor"), null, from, to, null, null, PageRequest.of(0, 10));
+                repository.findPage(List.of("tieActor"), null, from, to, null, null, PageRequest.of(0, 10));
 
         assertThat(page).hasSize(2);
         assertThat(page.get(0).id().trim()).isEqualTo(idHigh);
@@ -163,21 +154,15 @@ class AuditEventRepositoryQueryIT {
 
         AuditEvent last = firstPage.get(firstPage.size() - 1);
         List<AuditEvent> secondPage =
-                repository.findPage(
-                        List.of(tag),
-                        null,
-                        from,
-                        to,
-                        last.timestamp(),
-                        last.id(),
-                        PageRequest.of(0, 3));
+                repository.findPage(List.of(tag), null, from, to, last.timestamp(), last.id(), PageRequest.of(0, 3));
 
         assertThat(secondPage).hasSize(3);
         assertThat(secondPage.get(0).timestamp()).isBeforeOrEqualTo(last.timestamp());
         // No overlap between pages.
         assertThat(secondPage)
                 .extracting(AuditEvent::id)
-                .doesNotContainAnyElementsOf(firstPage.stream().map(AuditEvent::id).toList());
+                .doesNotContainAnyElementsOf(
+                        firstPage.stream().map(AuditEvent::id).toList());
     }
 
     @Test
@@ -188,8 +173,7 @@ class AuditEventRepositoryQueryIT {
         seedSequential(tag, 5, from);
 
         // Caller asks for limit+1 = 4. If exactly 4 came back, more rows exist.
-        List<AuditEvent> rows =
-                repository.findPage(List.of(tag), null, from, to, null, null, PageRequest.of(0, 4));
+        List<AuditEvent> rows = repository.findPage(List.of(tag), null, from, to, null, null, PageRequest.of(0, 4));
 
         assertThat(rows).hasSize(4);
     }
@@ -210,14 +194,9 @@ class AuditEventRepositoryQueryIT {
         seedSequential(actor, count, from, actor, actor);
     }
 
-    private void seedSequential(
-            String tag, int count, Instant from, String actor, String resource) {
+    private void seedSequential(String tag, int count, Instant from, String actor, String resource) {
         for (int i = 0; i < count; i++) {
-            insertWithExplicitId(
-                    UlidCreator.getMonotonicUlid().toString(),
-                    from.plusSeconds(i),
-                    actor,
-                    resource);
+            insertWithExplicitId(UlidCreator.getMonotonicUlid().toString(), from.plusSeconds(i), actor, resource);
         }
     }
 
@@ -242,10 +221,9 @@ class AuditEventRepositoryQueryIT {
             AuditEvent prev = page.get(i - 1);
             AuditEvent curr = page.get(i);
             // (timestamp, id) DESC means: prev > curr lexicographically.
-            assertThat(
-                            prev.timestamp().isAfter(curr.timestamp())
-                                    || (prev.timestamp().equals(curr.timestamp())
-                                            && prev.id().compareTo(curr.id()) > 0))
+            assertThat(prev.timestamp().isAfter(curr.timestamp())
+                            || (prev.timestamp().equals(curr.timestamp())
+                                    && prev.id().compareTo(curr.id()) > 0))
                     .as(
                             "row %d (%s, %s) should sort after row %d (%s, %s)",
                             i - 1, prev.timestamp(), prev.id(), i, curr.timestamp(), curr.id())

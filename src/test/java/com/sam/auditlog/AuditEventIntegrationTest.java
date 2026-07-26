@@ -1,12 +1,5 @@
 package com.sam.auditlog;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.http.MediaType.APPLICATION_JSON;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -30,17 +23,25 @@ import com.sam.auditlog.dto.CreateAuditEventRequest;
 import com.sam.auditlog.dto.ResourceRef;
 import com.sam.auditlog.model.Outcome;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
 class AuditEventIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:18.3-alpine")
-                    .withDatabaseName("auditlog")
-                    .withUsername("test")
-                    .withPassword("test");
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18.3-alpine")
+            .withDatabaseName("auditlog")
+            .withUsername("test")
+            .withPassword("test");
 
     static {
         POSTGRES.start();
@@ -56,36 +57,37 @@ class AuditEventIntegrationTest {
         reg.add("spring.flyway.password", POSTGRES::getPassword);
     }
 
-    @Autowired MockMvc mvc;
-    @Autowired ObjectMapper mapper;
-    @Autowired JdbcTemplate jdbc;
+    @Autowired
+    MockMvc mvc;
+
+    @Autowired
+    ObjectMapper mapper;
+
+    @Autowired
+    JdbcTemplate jdbc;
 
     @Test
     void postEvent_persistsAndReturns201_withServerAssignedTimestampAndUlidId() throws Exception {
-        var body =
-                mapper.writeValueAsString(
-                        new CreateAuditEventRequest(
-                                new ActorRef("u_42", "user"),
-                                "user.login",
-                                new ResourceRef("session_abc", "session"),
-                                Outcome.SUCCESS,
-                                Map.of("ip", "10.0.0.1")));
+        var body = mapper.writeValueAsString(new CreateAuditEventRequest(
+                new ActorRef("u_42", "user"),
+                "user.login",
+                new ResourceRef("session_abc", "session"),
+                Outcome.SUCCESS,
+                Map.of("ip", "10.0.0.1")));
 
-        var result =
-                mvc.perform(
-                                post("/api/v1/audit-events")
-                                        .contentType(APPLICATION_JSON)
-                                        .content(body))
-                        .andExpect(status().isCreated())
-                        .andExpect(header().exists("Location"))
-                        .andExpect(jsonPath("$.id").isString())
-                        .andExpect(jsonPath("$.timestamp").exists())
-                        .andExpect(jsonPath("$.actor.id").value("u_42"))
-                        .andExpect(jsonPath("$.actor.type").value("user"))
-                        .andExpect(jsonPath("$.resource.id").value("session_abc"))
-                        .andExpect(jsonPath("$.resource.type").value("session"))
-                        .andExpect(jsonPath("$.outcome").value("SUCCESS"))
-                        .andReturn();
+        var result = mvc.perform(post("/api/v1/audit-events")
+                        .contentType(APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(header().exists("Location"))
+                .andExpect(jsonPath("$.id").isString())
+                .andExpect(jsonPath("$.timestamp").exists())
+                .andExpect(jsonPath("$.actor.id").value("u_42"))
+                .andExpect(jsonPath("$.actor.type").value("user"))
+                .andExpect(jsonPath("$.resource.id").value("session_abc"))
+                .andExpect(jsonPath("$.resource.type").value("session"))
+                .andExpect(jsonPath("$.outcome").value("SUCCESS"))
+                .andReturn();
 
         JsonNode resp = mapper.readTree(result.getResponse().getContentAsString());
         assertThat(resp.get("id").asText()).hasSize(26);
@@ -96,8 +98,7 @@ class AuditEventIntegrationTest {
     void postEvent_ignoresClientSuppliedTimestamp() throws Exception {
         // Even if the JSON contains a timestamp field, the DTO does not bind it -
         // server-assigned timestamps are the only ones used.
-        String body =
-                """
+        String body = """
                 {
                   "timestamp": "1999-01-01T00:00:00Z",
                   "actor": {"id": "u_1", "type": "user"},
@@ -107,13 +108,11 @@ class AuditEventIntegrationTest {
                 }
                 """;
 
-        var result =
-                mvc.perform(
-                                post("/api/v1/audit-events")
-                                        .contentType(APPLICATION_JSON)
-                                        .content(body))
-                        .andExpect(status().isCreated())
-                        .andReturn();
+        var result = mvc.perform(post("/api/v1/audit-events")
+                        .contentType(APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn();
 
         JsonNode resp = mapper.readTree(result.getResponse().getContentAsString());
         assertThat(resp.get("timestamp").asText()).doesNotStartWith("1999");
@@ -121,8 +120,7 @@ class AuditEventIntegrationTest {
 
     @Test
     void postEvent_rejectsMissingActor() throws Exception {
-        String body =
-                """
+        String body = """
                 {"action":"x","resource":{"id":"r","type":"t"},"outcome":"SUCCESS"}
                 """;
         mvc.perform(post("/api/v1/audit-events").contentType(APPLICATION_JSON).content(body))
@@ -132,8 +130,7 @@ class AuditEventIntegrationTest {
 
     @Test
     void postEvent_rejectsBlankActorId() throws Exception {
-        String body =
-                """
+        String body = """
                 {"actor":{"id":"   ","type":"user"},"action":"x",
                  "resource":{"id":"r","type":"t"},"outcome":"SUCCESS"}
                 """;
@@ -143,8 +140,7 @@ class AuditEventIntegrationTest {
 
     @Test
     void postEvent_rejectsMissingActorType() throws Exception {
-        String body =
-                """
+        String body = """
                 {"actor":{"id":"u_1"},"action":"x",
                  "resource":{"id":"r","type":"t"},"outcome":"SUCCESS"}
                 """;
@@ -167,11 +163,7 @@ class AuditEventIntegrationTest {
                 "thing",
                 "success");
 
-        assertThatThrownBy(
-                        () ->
-                                jdbc.update(
-                                        "UPDATE audit_events SET actor_id = 'hacker' WHERE id = ?",
-                                        ulid))
+        assertThatThrownBy(() -> jdbc.update("UPDATE audit_events SET actor_id = 'hacker' WHERE id = ?", ulid))
                 .isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("append-only");
     }

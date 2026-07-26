@@ -1,10 +1,5 @@
 package com.sam.auditlog.integration;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -31,6 +26,11 @@ import com.github.f4b6a3.ulid.UlidCreator;
 import com.sam.auditlog.service.Cursor;
 import com.sam.auditlog.service.CursorCodec;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 /**
  * End-to-end test for {@code GET /api/v1/audit-events}. The events table is append-only
  * (UPDATE/DELETE/TRUNCATE blocked), so isolation between tests is achieved by allocating each test
@@ -42,11 +42,10 @@ import com.sam.auditlog.service.CursorCodec;
 class AuditEventQueryIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:18.3-alpine")
-                    .withDatabaseName("auditlog")
-                    .withUsername("test")
-                    .withPassword("test");
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18.3-alpine")
+            .withDatabaseName("auditlog")
+            .withUsername("test")
+            .withPassword("test");
 
     static {
         POSTGRES.start();
@@ -62,10 +61,17 @@ class AuditEventQueryIntegrationTest {
         reg.add("spring.flyway.password", POSTGRES::getPassword);
     }
 
-    @Autowired MockMvc mvc;
-    @Autowired ObjectMapper mapper;
-    @Autowired JdbcTemplate jdbc;
-    @Autowired CursorCodec codec;
+    @Autowired
+    MockMvc mvc;
+
+    @Autowired
+    ObjectMapper mapper;
+
+    @Autowired
+    JdbcTemplate jdbc;
+
+    @Autowired
+    CursorCodec codec;
 
     private static final Instant ANCHOR = Instant.parse("2026-04-01T00:00:00Z");
 
@@ -84,15 +90,7 @@ class AuditEventQueryIntegrationTest {
         seed(from, 3, tag + "_A", "res");
         seed(from.plusSeconds(10), 2, tag + "_B", "res");
 
-        JsonNode body =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "_A&from="
-                                + from
-                                + "&to="
-                                + to
-                                + "&limit=50");
+        JsonNode body = getOk("/api/v1/audit-events?actor=" + tag + "_A&from=" + from + "&to=" + to + "&limit=50");
 
         assertThat(body.get("events")).hasSize(3);
         body.get("events")
@@ -107,15 +105,11 @@ class AuditEventQueryIntegrationTest {
         seed(from, 2, tag, tag + "_X");
         seed(from.plusSeconds(10), 4, tag, tag + "_Y");
 
-        JsonNode body =
-                getOk("/api/v1/audit-events?resource=" + tag + "_X&from=" + from + "&to=" + to);
+        JsonNode body = getOk("/api/v1/audit-events?resource=" + tag + "_X&from=" + from + "&to=" + to);
 
         assertThat(body.get("events")).hasSize(2);
         body.get("events")
-                .forEach(
-                        e ->
-                                assertThat(e.get("resource").get("id").asText())
-                                        .isEqualTo(tag + "_X"));
+                .forEach(e -> assertThat(e.get("resource").get("id").asText()).isEqualTo(tag + "_X"));
     }
 
     @Test
@@ -126,12 +120,7 @@ class AuditEventQueryIntegrationTest {
         insertAt(base.plusSeconds(2), tag, tag);
         insertAt(base.plusSeconds(3), tag, tag);
 
-        JsonNode body =
-                getOk(
-                        "/api/v1/audit-events?from="
-                                + base.plusSeconds(2)
-                                + "&to="
-                                + base.plusSeconds(3));
+        JsonNode body = getOk("/api/v1/audit-events?from=" + base.plusSeconds(2) + "&to=" + base.plusSeconds(3));
 
         assertThat(body.get("events")).hasSize(1);
         assertThat(body.get("events").get(0).get("timestamp").asText())
@@ -148,15 +137,7 @@ class AuditEventQueryIntegrationTest {
         seed(from.plusSeconds(40), 2, tag + "_B", tag + "_X");
 
         JsonNode body =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "_A&resource="
-                                + tag
-                                + "_X&from="
-                                + from
-                                + "&to="
-                                + to);
+                getOk("/api/v1/audit-events?actor=" + tag + "_A&resource=" + tag + "_X&from=" + from + "&to=" + to);
 
         assertThat(body.get("events")).hasSize(2);
     }
@@ -205,8 +186,7 @@ class AuditEventQueryIntegrationTest {
 
     @Test
     void malformedCursor_validBase64ButNotJson_returns400() throws Exception {
-        String token =
-                Base64.getUrlEncoder().withoutPadding().encodeToString("not json".getBytes());
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString("not json".getBytes());
         mvc.perform(get("/api/v1/audit-events?cursor=" + token)).andExpect(status().isBadRequest());
     }
 
@@ -222,57 +202,49 @@ class AuditEventQueryIntegrationTest {
 
     @Test
     void limitTooSmall_returns422() throws Exception {
-        mvc.perform(get("/api/v1/audit-events?limit=0"))
-                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get("/api/v1/audit-events?limit=0")).andExpect(status().isUnprocessableEntity());
     }
 
     @Test
     void limitTooLarge_returns422() throws Exception {
-        mvc.perform(get("/api/v1/audit-events?limit=201"))
-                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get("/api/v1/audit-events?limit=201")).andExpect(status().isUnprocessableEntity());
     }
 
     @Test
     void cursorEncodedWithFilter_replayedWithoutFilter_returns422() throws Exception {
-        Cursor cursor =
-                new Cursor(
-                        CursorCodec.CURRENT_VERSION,
-                        ANCHOR,
-                        UlidCreator.getMonotonicUlid().toString(),
-                        codec.filterHash(Set.of("alice"), null, null, null));
+        Cursor cursor = new Cursor(
+                CursorCodec.CURRENT_VERSION,
+                ANCHOR,
+                UlidCreator.getMonotonicUlid().toString(),
+                codec.filterHash(Set.of("alice"), null, null, null));
         String token = codec.encode(cursor);
 
         // Replay with no actor filter -> filter set differs -> 422.
-        mvc.perform(get("/api/v1/audit-events?cursor=" + token))
-                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get("/api/v1/audit-events?cursor=" + token)).andExpect(status().isUnprocessableEntity());
     }
 
     @Test
     void cursorEncodedWithoutFilter_replayedWithFilter_returns422() throws Exception {
-        Cursor cursor =
-                new Cursor(
-                        CursorCodec.CURRENT_VERSION,
-                        ANCHOR,
-                        UlidCreator.getMonotonicUlid().toString(),
-                        codec.filterHash(null, null, null, null));
+        Cursor cursor = new Cursor(
+                CursorCodec.CURRENT_VERSION,
+                ANCHOR,
+                UlidCreator.getMonotonicUlid().toString(),
+                codec.filterHash(null, null, null, null));
         String token = codec.encode(cursor);
 
-        mvc.perform(get("/api/v1/audit-events?actor=bob&cursor=" + token))
-                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get("/api/v1/audit-events?actor=bob&cursor=" + token)).andExpect(status().isUnprocessableEntity());
     }
 
     @Test
     void cursorWithBumpedVersion_returns422() throws Exception {
-        Cursor cursor =
-                new Cursor(
-                        CursorCodec.CURRENT_VERSION + 1,
-                        ANCHOR,
-                        UlidCreator.getMonotonicUlid().toString(),
-                        codec.filterHash(null, null, null, null));
+        Cursor cursor = new Cursor(
+                CursorCodec.CURRENT_VERSION + 1,
+                ANCHOR,
+                UlidCreator.getMonotonicUlid().toString(),
+                codec.filterHash(null, null, null, null));
         String token = codec.encode(cursor);
 
-        mvc.perform(get("/api/v1/audit-events?cursor=" + token))
-                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get("/api/v1/audit-events?cursor=" + token)).andExpect(status().isUnprocessableEntity());
     }
 
     // ---------- Ordering & ties (AC2.1-AC2.3) ----------
@@ -311,16 +283,15 @@ class AuditEventQueryIntegrationTest {
         int pages = 0;
 
         while (true) {
-            String url =
-                    "/api/v1/audit-events?actor="
-                            + tag
-                            + "&from="
-                            + from
-                            + "&to="
-                            + to
-                            + "&limit="
-                            + pageSize
-                            + (nextCursor == null ? "" : "&cursor=" + nextCursor);
+            String url = "/api/v1/audit-events?actor="
+                    + tag
+                    + "&from="
+                    + from
+                    + "&to="
+                    + to
+                    + "&limit="
+                    + pageSize
+                    + (nextCursor == null ? "" : "&cursor=" + nextCursor);
             JsonNode page = getOk(url);
             pages++;
             for (JsonNode e : page.get("events")) {
@@ -343,15 +314,7 @@ class AuditEventQueryIntegrationTest {
         Instant to = from.plusSeconds(3600);
         seedSequential(from, 4, tag, tag);
 
-        JsonNode firstPage =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "&from="
-                                + from
-                                + "&to="
-                                + to
-                                + "&limit=2");
+        JsonNode firstPage = getOk("/api/v1/audit-events?actor=" + tag + "&from=" + from + "&to=" + to + "&limit=2");
         String nextCursor = firstPage.get("next_cursor").asText();
 
         // Insert newer rows; the cursor pins us to the original snapshot's (timestamp, id) window
@@ -359,26 +322,15 @@ class AuditEventQueryIntegrationTest {
         Instant newer = from.plusSeconds(1000);
         seedSequential(newer, 3, tag, tag);
 
-        JsonNode secondPage =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "&from="
-                                + from
-                                + "&to="
-                                + to
-                                + "&limit=2&cursor="
-                                + nextCursor);
+        JsonNode secondPage = getOk(
+                "/api/v1/audit-events?actor=" + tag + "&from=" + from + "&to=" + to + "&limit=2&cursor=" + nextCursor);
 
         // Page 2 has the remaining 2 rows from the original snapshot, not the new ones.
         assertThat(secondPage.get("events")).hasSize(2);
-        secondPage
-                .get("events")
-                .forEach(
-                        e -> {
-                            Instant ts = Instant.parse(e.get("timestamp").asText());
-                            assertThat(ts).isBefore(newer);
-                        });
+        secondPage.get("events").forEach(e -> {
+            Instant ts = Instant.parse(e.get("timestamp").asText());
+            assertThat(ts).isBefore(newer);
+        });
     }
 
     // ---------- Limit edge (AC3.7) ----------
@@ -402,15 +354,7 @@ class AuditEventQueryIntegrationTest {
         Instant from = windowStart(tag);
         Instant to = from.plusSeconds(3600);
 
-        mvc.perform(
-                        get(
-                                "/api/v1/audit-events?actor="
-                                        + tag
-                                        + "&from="
-                                        + from
-                                        + "&to="
-                                        + to
-                                        + "&limit=200"))
+        mvc.perform(get("/api/v1/audit-events?actor=" + tag + "&from=" + from + "&to=" + to + "&limit=200"))
                 .andExpect(status().isOk());
     }
 
@@ -421,15 +365,7 @@ class AuditEventQueryIntegrationTest {
         Instant to = from.plusSeconds(3600);
         seedSequential(from, 3, tag, tag);
 
-        JsonNode body =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "&from="
-                                + from
-                                + "&to="
-                                + to
-                                + "&limit=3");
+        JsonNode body = getOk("/api/v1/audit-events?actor=" + tag + "&from=" + from + "&to=" + to + "&limit=3");
         assertThat(body.get("events")).hasSize(3);
         assertThat(body.has("next_cursor")).isFalse();
     }
@@ -445,35 +381,10 @@ class AuditEventQueryIntegrationTest {
         seed(from.plusSeconds(10), 2, tag + "_B", "res");
         seed(from.plusSeconds(20), 2, tag + "_C", "res");
 
-        JsonNode multi =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "_A,"
-                                + tag
-                                + "_B&from="
-                                + from
-                                + "&to="
-                                + to
-                                + "&limit=50");
-        JsonNode onlyA =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "_A&from="
-                                + from
-                                + "&to="
-                                + to
-                                + "&limit=50");
-        JsonNode onlyB =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "_B&from="
-                                + from
-                                + "&to="
-                                + to
-                                + "&limit=50");
+        JsonNode multi = getOk(
+                "/api/v1/audit-events?actor=" + tag + "_A," + tag + "_B&from=" + from + "&to=" + to + "&limit=50");
+        JsonNode onlyA = getOk("/api/v1/audit-events?actor=" + tag + "_A&from=" + from + "&to=" + to + "&limit=50");
+        JsonNode onlyB = getOk("/api/v1/audit-events?actor=" + tag + "_B&from=" + from + "&to=" + to + "&limit=50");
 
         Set<String> union = new HashSet<>(ids(onlyA.get("events")));
         union.addAll(ids(onlyB.get("events")));
@@ -491,30 +402,19 @@ class AuditEventQueryIntegrationTest {
         seed(from, 2, tag + "_A", "res");
         seed(from.plusSeconds(10), 2, tag + "_B", "res");
 
-        JsonNode withDupes =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "_A,"
-                                + tag
-                                + "_A,"
-                                + tag
-                                + "_B&from="
-                                + from
-                                + "&to="
-                                + to
-                                + "&limit=50");
-        JsonNode canonical =
-                getOk(
-                        "/api/v1/audit-events?actor="
-                                + tag
-                                + "_A,"
-                                + tag
-                                + "_B&from="
-                                + from
-                                + "&to="
-                                + to
-                                + "&limit=50");
+        JsonNode withDupes = getOk("/api/v1/audit-events?actor="
+                + tag
+                + "_A,"
+                + tag
+                + "_A,"
+                + tag
+                + "_B&from="
+                + from
+                + "&to="
+                + to
+                + "&limit=50");
+        JsonNode canonical = getOk(
+                "/api/v1/audit-events?actor=" + tag + "_A," + tag + "_B&from=" + from + "&to=" + to + "&limit=50");
 
         // AC1.11: dedup is silent and total - the event list and next_cursor are identical.
         assertThat(ids(withDupes.get("events"))).isEqualTo(ids(canonical.get("events")));
@@ -539,13 +439,10 @@ class AuditEventQueryIntegrationTest {
 
         mvc.perform(get("/api/v1/audit-events?actor=a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11"))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(
-                        jsonPath("$.errors[0]")
-                                .value(org.hamcrest.Matchers.containsString("at most 10")));
+                .andExpect(jsonPath("$.errors[0]").value(org.hamcrest.Matchers.containsString("at most 10")));
 
         // 12 raw entries but only 10 distinct after dedup -> accepted.
-        mvc.perform(get("/api/v1/audit-events?actor=A,A,B,B,C,D,E,F,G,H,I,J"))
-                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/audit-events?actor=A,A,B,B,C,D,E,F,G,H,I,J")).andExpect(status().isOk());
     }
 
     @Test
@@ -561,22 +458,18 @@ class AuditEventQueryIntegrationTest {
         // AC3.11: cursor minted under {A,B} accepted when replayed with {A,B} or {B,A},
         // rejected when replayed with any different set.
         String mintedFh = codec.filterHash(Set.of("A", "B"), null, null, null);
-        Cursor minted =
-                new Cursor(
-                        CursorCodec.CURRENT_VERSION,
-                        ANCHOR,
-                        UlidCreator.getMonotonicUlid().toString(),
-                        mintedFh);
+        Cursor minted = new Cursor(
+                CursorCodec.CURRENT_VERSION,
+                ANCHOR,
+                UlidCreator.getMonotonicUlid().toString(),
+                mintedFh);
         String token = codec.encode(minted);
 
-        mvc.perform(get("/api/v1/audit-events?actor=A,B&cursor=" + token))
-                .andExpect(status().isOk());
-        mvc.perform(get("/api/v1/audit-events?actor=B,A&cursor=" + token))
-                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/audit-events?actor=A,B&cursor=" + token)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/audit-events?actor=B,A&cursor=" + token)).andExpect(status().isOk());
         mvc.perform(get("/api/v1/audit-events?actor=A,B,C&cursor=" + token))
                 .andExpect(status().isUnprocessableEntity());
-        mvc.perform(get("/api/v1/audit-events?actor=A&cursor=" + token))
-                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get("/api/v1/audit-events?actor=A&cursor=" + token)).andExpect(status().isUnprocessableEntity());
     }
 
     @Test
@@ -593,24 +486,25 @@ class AuditEventQueryIntegrationTest {
         String nextCursor = null;
         int pages = 0;
         while (true) {
-            String url =
-                    "/api/v1/audit-events?actor="
-                            + tag
-                            + "_A,"
-                            + tag
-                            + "_B,"
-                            + tag
-                            + "_C&from="
-                            + from
-                            + "&to="
-                            + to
-                            + "&limit=3"
-                            + (nextCursor == null ? "" : "&cursor=" + nextCursor);
+            String url = "/api/v1/audit-events?actor="
+                    + tag
+                    + "_A,"
+                    + tag
+                    + "_B,"
+                    + tag
+                    + "_C&from="
+                    + from
+                    + "&to="
+                    + to
+                    + "&limit=3"
+                    + (nextCursor == null ? "" : "&cursor=" + nextCursor);
             JsonNode page = getOk(url);
             pages++;
             for (JsonNode e : page.get("events")) {
                 String id = e.get("id").asText().trim();
-                assertThat(seen.add(id)).as("no duplicate id %s across pages", id).isTrue();
+                assertThat(seen.add(id))
+                        .as("no duplicate id %s across pages", id)
+                        .isTrue();
             }
             if (page.get("next_cursor") == null || page.get("next_cursor").isNull()) {
                 break;

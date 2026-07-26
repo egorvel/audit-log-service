@@ -15,10 +15,4 @@ import java.util.Set;
  * AuditEventQueryService#canonicalizeActor(java.util.List)} from the raw {@code List<String>}
  * Spring binds out of the request.
  */
-public record QuerySpec(
-        Set<String> actor,
-        String resource,
-        Instant from,
-        Instant to,
-        Cursor cursor,
-        Integer limit) {}
+public record QuerySpec(Set<String> actor, String resource, Instant from, Instant to, Cursor cursor, Integer limit) {}

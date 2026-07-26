@@ -3,7 +3,6 @@ package com.sam.auditlog.model;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;

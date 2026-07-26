@@ -3,7 +3,6 @@ package com.sam.auditlog.controller;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
-
 import jakarta.validation.Valid;
 
 import org.springframework.format.annotation.DateTimeFormat;
@@ -42,9 +41,7 @@ public class AuditEventController {
     private final CursorCodec cursorCodec;
 
     public AuditEventController(
-            AuditEventService service,
-            AuditEventQueryService queryService,
-            CursorCodec cursorCodec) {
+            AuditEventService service, AuditEventQueryService queryService, CursorCodec cursorCodec) {
         this.service = service;
         this.queryService = queryService;
         this.cursorCodec = cursorCodec;
@@ -53,55 +50,48 @@ public class AuditEventController {
     @PostMapping
     @Operation(
             summary = "Record a new audit event",
-            description =
-                    "Persists an immutable audit event. The server assigns id (ULID) and"
-                            + " timestamp; any client-supplied values for those fields are"
-                            + " ignored.")
+            description = "Persists an immutable audit event. The server assigns id (ULID) and"
+                    + " timestamp; any client-supplied values for those fields are"
+                    + " ignored.")
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "Event created"),
         @ApiResponse(responseCode = "400", description = "Request body failed validation")
     })
-    public ResponseEntity<AuditEventResponse> create(
-            @Valid @RequestBody CreateAuditEventRequest request) {
+    public ResponseEntity<AuditEventResponse> create(@Valid @RequestBody CreateAuditEventRequest request) {
         AuditEventResponse saved = service.record(request);
-        var location =
-                UriComponentsBuilder.fromPath("/api/v1/audit-events/{id}")
-                        .buildAndExpand(saved.id())
-                        .toUri();
+        var location = UriComponentsBuilder.fromPath("/api/v1/audit-events/{id}")
+                .buildAndExpand(saved.id())
+                .toUri();
         return ResponseEntity.created(location).body(saved);
     }
 
     @GetMapping
     @Operation(
             summary = "List audit events with keyset pagination",
-            description =
-                    "Returns events ordered by (timestamp DESC, id DESC). Pages are opaque-cursor"
-                            + " paginated; pass next_cursor from one response as cursor on the next"
-                            + " request. The cursor encodes the originating filter set, so changing"
-                            + " any filter while paging is rejected with 422.")
+            description = "Returns events ordered by (timestamp DESC, id DESC). Pages are opaque-cursor"
+                    + " paginated; pass next_cursor from one response as cursor on the next"
+                    + " request. The cursor encodes the originating filter set, so changing"
+                    + " any filter while paging is rejected with 422.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Page of events"),
         @ApiResponse(
                 responseCode = "400",
-                description =
-                        "Parse-tier failure: malformed timestamp, non-integer limit, cursor that"
-                                + " is not valid base64url(JSON), or empty actor/resource value"
-                                + " (including empty entry or trailing comma in the actor list)."),
+                description = "Parse-tier failure: malformed timestamp, non-integer limit, cursor that"
+                        + " is not valid base64url(JSON), or empty actor/resource value"
+                        + " (including empty entry or trailing comma in the actor list)."),
         @ApiResponse(
                 responseCode = "422",
-                description =
-                        "Semantic-tier failure: from >= to, limit outside [1, 200], more than 10"
-                                + " distinct actor ids, cursor whose filter hash does not match"
-                                + " the current request, or unsupported cursor schema version.")
+                description = "Semantic-tier failure: from >= to, limit outside [1, 200], more than 10"
+                        + " distinct actor ids, cursor whose filter hash does not match"
+                        + " the current request, or unsupported cursor schema version.")
     })
     public ResponseEntity<AuditEventPage> query(
             @Parameter(
                             name = "actor",
-                            description =
-                                    "One or more distinct actor ids, comma-separated. Duplicates"
-                                        + " are silently dropped. Maximum 10 distinct ids per"
-                                        + " request. Empty value, empty entry, or trailing comma ->"
-                                        + " 400. More than 10 distinct ids -> 422.",
+                            description = "One or more distinct actor ids, comma-separated. Duplicates"
+                                    + " are silently dropped. Maximum 10 distinct ids per"
+                                    + " request. Empty value, empty entry, or trailing comma ->"
+                                    + " 400. More than 10 distinct ids -> 422.",
                             example = "u_42,svc_billing",
                             explode = Explode.FALSE,
                             array = @ArraySchema(schema = @Schema(type = "string")))
@@ -119,13 +109,11 @@ public class AuditEventController {
                     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
                     Instant to,
             @Parameter(
-                            description =
-                                    "Opaque pagination cursor from a previous response. Must be"
-                                        + " replayed with the same filter set that produced it.")
+                            description = "Opaque pagination cursor from a previous response. Must be"
+                                    + " replayed with the same filter set that produced it.")
                     @RequestParam(required = false)
                     String cursor,
-            @Parameter(description = "Page size. Must be in [1, 200]. Defaults to 50.")
-                    @RequestParam(required = false)
+            @Parameter(description = "Page size. Must be in [1, 200]. Defaults to 50.") @RequestParam(required = false)
                     Integer limit) {
         Cursor decoded = cursor == null ? null : cursorCodec.decode(cursor);
         // Split with limit -1 so trailing/leading commas surface as blank entries (?actor=A, or
@@ -135,8 +123,6 @@ public class AuditEventController {
         var canonicalActor = queryService.canonicalizeActor(actorList);
         var validatedResource = queryService.requireNonBlankResource(resource);
         return ResponseEntity.ok(
-                queryService.query(
-                        new QuerySpec(
-                                canonicalActor, validatedResource, from, to, decoded, limit)));
+                queryService.query(new QuerySpec(canonicalActor, validatedResource, from, to, decoded, limit)));
     }
 }

@@ -20,31 +20,22 @@ import com.sam.auditlog.service.QueryValidationException;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidation(
-            MethodArgumentNotValidException ex) {
-        List<String> errors =
-                ex.getBindingResult().getFieldErrors().stream()
-                        .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
-                        .collect(Collectors.toList());
-        return ResponseEntity.badRequest()
-                .body(envelope(HttpStatus.BAD_REQUEST, "Validation failed", errors));
+    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
+        List<String> errors = ex.getBindingResult().getFieldErrors().stream()
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+                .collect(Collectors.toList());
+        return ResponseEntity.badRequest().body(envelope(HttpStatus.BAD_REQUEST, "Validation failed", errors));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<Map<String, Object>> handleUnreadable(
-            HttpMessageNotReadableException ex) {
-        return ResponseEntity.badRequest()
-                .body(envelope(HttpStatus.BAD_REQUEST, "Malformed request body", List.of()));
+    public ResponseEntity<Map<String, Object>> handleUnreadable(HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest().body(envelope(HttpStatus.BAD_REQUEST, "Malformed request body", List.of()));
     }
 
     @ExceptionHandler(CursorDecodeException.class)
     public ResponseEntity<Map<String, Object>> handleCursorDecode(CursorDecodeException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(
-                        envelope(
-                                HttpStatus.BAD_REQUEST,
-                                "Cursor decode failed",
-                                List.of(ex.getMessage())));
+                .body(envelope(HttpStatus.BAD_REQUEST, "Cursor decode failed", List.of(ex.getMessage())));
     }
 
     @ExceptionHandler(QueryValidationException.class)
@@ -59,14 +50,11 @@ public class GlobalExceptionHandler {
                 .body(envelope(HttpStatus.BAD_REQUEST, "Empty filter value", ex.errors()));
     }
 
-    private static Map<String, Object> envelope(
-            HttpStatus status, String error, List<String> errors) {
-        Map<String, Object> body =
-                new java.util.LinkedHashMap<>(
-                        Map.of(
-                                "timestamp", Instant.now().toString(),
-                                "status", status.value(),
-                                "error", error));
+    private static Map<String, Object> envelope(HttpStatus status, String error, List<String> errors) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>(Map.of(
+                "timestamp", Instant.now().toString(),
+                "status", status.value(),
+                "error", error));
         if (!errors.isEmpty()) {
             body.put("errors", errors);
         }
